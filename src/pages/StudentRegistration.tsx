@@ -58,10 +58,11 @@ export default function StudentRegistration() {
     }));
   };
 
-  const contactError = formData.contactNumber.length > 10 || (formData.contactNumber && !/^\d+$/.test(formData.contactNumber)) ? 'Invalid Contact Number' : '';
+  const contactError = formData.contactNumber && !/^\d{10}$/.test(formData.contactNumber) ? 'Invalid phone number. Please enter only 10 digits.' : '';
   const attendanceError = Number(formData.attendancePercentage) > 100 ? 'Invalid Attendance Percentage' : '';
   const cgpaError = formData.cgpa && (Number(formData.cgpa) > 10 || Number(formData.cgpa) < 0) ? 'Invalid CGPA' : '';
-  const isFormInvalid = !!contactError || !!attendanceError || !!cgpaError;
+  const rollNumberError = formData.rollNumber && !/^[0-9]{2}E51A[0-9A-Z]{4}$/i.test(formData.rollNumber) ? 'Invalid Roll Number format. (e.g. 24E51A1234)' : '';
+  const isFormInvalid = !!contactError || !!attendanceError || !!cgpaError || !!rollNumberError;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,117 +173,135 @@ export default function StudentRegistration() {
 
         {showGuidelines && (
           <div className="p-6 border-t border-slate-100 bg-white grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Guidelines - Left Column */}
+            {/* Rules & Eligibility - Left Column */}
             <div className="lg:col-span-6 space-y-4">
-              <h4 className="font-bold text-xs text-slate-400 uppercase tracking-widest mb-2">Key Guidelines</h4>
+              <h4 className="font-bold text-xs text-slate-400 uppercase tracking-widest mb-1">Internship Eligibility Rules</h4>
               
-              {/* Point 7 Highlight Alert */}
-              <div className="p-4 bg-[#78be21]/10 border border-[#78be21]/20 rounded-xl flex gap-3">
-                <AlertCircle className="text-[#78be21] shrink-0 mt-0.5" size={16} />
+              {/* Semester-based Restriction Warning Box */}
+              <div className="p-4 bg-amber-50 border border-amber-200/60 rounded-xl flex gap-3">
+                <span className="text-lg shrink-0">⚠️</span>
                 <div>
-                  <span className="font-bold text-xs text-[#68a61d] uppercase tracking-wide block mb-1">Important Rule (Point 7)</span>
+                  <span className="font-bold text-xs text-amber-800 uppercase tracking-wide block mb-1">In-House Restriction</span>
                   <p className="text-slate-700 text-xs leading-relaxed font-semibold">
-                    All internship applications must be submitted <strong className="text-[#68a61d] underline decoration-wavy decoration-[#78be21] underline-offset-4">15 days prior</strong> to the start of the internship program to the CDC Internship Coordinator.
+                    Students from 2nd Year – 1st Semester to 3rd Year – 1st Semester are eligible only for In-House Internships (Live Projects).
                   </p>
                 </div>
               </div>
 
-              <ol className="space-y-2.5 text-xs text-slate-600 leading-relaxed list-decimal pl-4">
-                <li>
-                  <strong>SPF Band:</strong> Derived from academic performance classification as per SPF guidelines.
-                </li>
-                <li>
-                  <strong>CDC Band:</strong> Assigned based on participation in CDC training programs and assessment scores.
-                </li>
-                <li>
-                  <strong>Eligibility:</strong> Students from 2nd year to final year are eligible based on the band matrix.
-                  <div className="mt-1.5 p-2.5 bg-amber-50 border border-amber-200/60 rounded-xl text-amber-800 font-medium">
-                    ⚠️ <strong>2nd Year Student Restriction:</strong> Students from 2nd Year are allowed internships only for a maximum duration of 4 weeks (28 days) and are eligible only for In-House internships.
-                  </div>
-                </li>
-                <li>
-                  <strong>Relevance:</strong> Internships must align with student's career aspirations and professional goals.
-                </li>
-                <li>
-                  <strong>Duration & Extensions:</strong> Initial approval is for 3 months max. Extensions require good performance and:
-                  <ul className="list-disc pl-4 mt-1 space-y-1">
-                    <li>Classes must be attended on Saturdays for 5-day working internships.</li>
-                    <li>Submission of monthly progress reports to the HOD on the last Saturday of each month.</li>
+              <div className="space-y-3.5 text-xs text-slate-600 leading-relaxed">
+                <div>
+                  <strong className="text-slate-800 font-bold block mb-1">1. General Eligibility</strong>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>1st Year students are not eligible for internship applications.</li>
+                    <li>Students from 2nd Year – 1st Semester to 3rd Year – 1st Semester are eligible only for In-House Internships (Live Projects).</li>
+                    <li>Students from 3rd Year – 2nd Semester and Final Year are eligible for internships subject to institutional approval.</li>
                   </ul>
-                </li>
-                <li>
-                  <strong>Attendance:</strong> Awarded as per the official HITAM attendance policy.
-                </li>
-              </ol>
-            </div>
+                </div>
 
-            {/* Eligibility Table - Right Column */}
-            <div className="lg:col-span-6 space-y-3">
-              <h4 className="font-bold text-xs text-slate-400 uppercase tracking-widest mb-2">Eligibility Matrix (SPF vs CDC Bands)</h4>
+                <div>
+                  <strong className="text-slate-800 font-bold block mb-1">2. Internship Duration Criteria</strong>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>2nd Year students are allowed internships only for a maximum duration of 4 weeks (28 days) and are eligible only for In-House internships.</li>
+                    <li>Students from 3rd Year – 2nd Semester are eligible for a maximum duration of 3 months.</li>
+                    <li>Students from 4th Year – 1st Semester onwards are eligible for internships up to 3 months, with an additional extension of 3 months permitted based on recommendations from the HOD and Mentors.</li>
+                  </ul>
+                </div>
+
+                <div>
+                  <strong className="text-slate-800 font-bold block mb-1">3. SPF & CDC Band Rules</strong>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>Students with SPF and CDC Bands of A or B can directly apply to the CDC department.</li>
+                    <li>Students with SPF or CDC Bands of C or D must obtain Mentor and HOD approval before applying to CDC.</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Eligibility Matrix Table */}
+              <h4 className="font-bold text-xs text-slate-400 uppercase tracking-widest pt-2 mb-1">Eligibility Matrix</h4>
               <div className="overflow-x-auto border border-slate-200 rounded-xl">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                      <th className="p-3">S.No.</th>
                       <th className="p-3">SPF Band</th>
                       <th className="p-3">CDC Band</th>
                       <th className="p-3">Permissible Duration</th>
                       <th className="p-3">Conditions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                  <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
                     <tr className="hover:bg-slate-50/50">
-                      <td className="p-3 font-medium text-slate-400">1</td>
-                      <td className="p-3"><span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-md font-bold">A</span></td>
-                      <td className="p-3"><span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-md font-bold">A</span></td>
-                      <td className="p-3 font-medium">3 Months + 3 Months Extension</td>
-                      <td className="p-3 text-slate-400 text-[10px]">-</td>
+                      <td className="p-3"><span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-md font-bold">A / B</span></td>
+                      <td className="p-3"><span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-md font-bold">A / B</span></td>
+                      <td className="p-3">3 Months (Extendable to 6 Months for 4th Year)</td>
+                      <td className="p-3 text-emerald-700 font-semibold">Direct apply to CDC</td>
                     </tr>
                     <tr className="hover:bg-slate-50/50">
-                      <td className="p-3 font-medium text-slate-400">2</td>
-                      <td className="p-3"><span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md font-bold">A / B</span></td>
-                      <td className="p-3"><span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md font-bold">B / A</span></td>
-                      <td className="p-3 font-medium">3 Months + 3 Months Extension</td>
-                      <td className="p-3 text-slate-400 text-[10px]">-</td>
-                    </tr>
-                    <tr className="hover:bg-slate-50/50">
-                      <td className="p-3 font-medium text-slate-400">3</td>
-                      <td className="p-3"><span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-md font-bold">A</span></td>
+                      <td className="p-3"><span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-md font-bold">A / B</span></td>
                       <td className="p-3"><span className="px-2 py-0.5 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-md font-bold">C / D</span></td>
-                      <td className="p-3 font-medium">3 Months + 3 Months Extension</td>
-                      <td className="p-3 text-slate-400 text-[10px]">-</td>
+                      <td className="p-3">3 Months (Extendable to 6 Months for 4th Year)</td>
+                      <td className="p-3 text-amber-700 font-semibold">Requires Mentor & HOD Approval</td>
                     </tr>
                     <tr className="hover:bg-slate-50/50">
-                      <td className="p-3 font-medium text-slate-400">4</td>
-                      <td className="p-3"><span className="px-2 py-0.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-md font-bold">B</span></td>
-                      <td className="p-3"><span className="px-2 py-0.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-md font-bold">B</span></td>
-                      <td className="p-3 font-medium">3 Months + 3 Months Extension</td>
-                      <td className="p-3 text-slate-400 text-[10px]">-</td>
-                    </tr>
-                    <tr className="hover:bg-slate-50/50">
-                      <td className="p-3 font-medium text-slate-400">5</td>
-                      <td className="p-3"><span className="px-2 py-0.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-md font-bold">B</span></td>
                       <td className="p-3"><span className="px-2 py-0.5 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-md font-bold">C / D</span></td>
-                      <td className="p-3 font-medium">3 Months + 3 Months Extension</td>
-                      <td className="p-3 text-slate-400 text-[10px]">-</td>
-                    </tr>
-                    <tr className="hover:bg-slate-50/50">
-                      <td className="p-3 font-medium text-slate-400">6</td>
-                      <td className="p-3"><span className="px-2 py-0.5 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-md font-bold">C / D</span></td>
-                      <td className="p-3"><span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-md font-bold">A / B</span></td>
-                      <td className="p-3 font-medium text-amber-700">3 Months</td>
-                      <td className="p-3 text-amber-700 font-medium text-[10px]">To be endorsed by the Dept</td>
+                      <td className="p-3"><span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-200 rounded-md font-bold">A / B</span></td>
+                      <td className="p-3">3 Months</td>
+                      <td className="p-3 text-amber-700 font-semibold">Requires Mentor & HOD Approval</td>
                     </tr>
                     <tr className="bg-red-50/40 hover:bg-red-50/60">
-                      <td className="p-3 font-medium text-slate-400">7</td>
                       <td className="p-3"><span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded-md font-bold">C / D</span></td>
                       <td className="p-3"><span className="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded-md font-bold">C / D</span></td>
                       <td className="p-3 text-red-600 font-bold">Not Eligible</td>
-                      <td className="p-3 text-red-600 font-medium text-[10px]">Restricted</td>
+                      <td className="p-3 text-red-600 font-semibold">Restricted (except 2nd Yr Live Projects)</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            {/* Guidelines - Right Column */}
+            <div className="lg:col-span-6 space-y-4">
+              <h4 className="font-bold text-xs text-slate-400 uppercase tracking-widest mb-1">Internship Guidelines</h4>
+
+              {/* Timeline Rule Box */}
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl flex gap-3">
+                <AlertCircle className="text-blue-600 shrink-0 mt-0.5" size={16} />
+                <div>
+                  <span className="font-bold text-xs text-blue-800 uppercase tracking-wide block mb-1">Important Timeline Rule</span>
+                  <p className="text-slate-700 text-xs leading-relaxed font-semibold">
+                    Internship applications must be submitted at least 15 days prior to the internship start date.
+                  </p>
+                </div>
+              </div>
+
+              <ol className="space-y-2.5 text-xs text-slate-600 leading-relaxed list-decimal pl-4 font-medium">
+                <li>
+                  Internship eligibility is determined based on academic semester, SPF Band, CDC Band, attendance, and academic performance.
+                </li>
+                <li>
+                  1st Year students are not eligible for internship applications.
+                </li>
+                <li>
+                  Students from 2nd Year – 1st Semester to 3rd Year – 1st Semester are eligible only for In-House Internships (Live Projects).
+                </li>
+                <li>
+                  Students from 3rd Year – 2nd Semester are eligible for both In-House and External Internships for a maximum duration of 3 months.
+                </li>
+                <li>
+                  Students from 4th Year – 1st Semester onwards are eligible for internships up to 3 months, with an additional extension of 3 months permitted based on recommendations from the HOD and Mentors.
+                </li>
+                <li>
+                  2nd Year students may select critical subjects to attend during the semester while participating in internship programs.
+                </li>
+                <li>
+                  Internship applications must be submitted at least 15 days prior to the internship start date.
+                </li>
+                <li>
+                  Internship approvals are subject to CDC review, attendance policy, academic eligibility, and institutional guidelines.
+                </li>
+                <li>
+                  Monthly reports are reviewed by CDC Faculty, while the final approval authority rests with the Principal.
+                </li>
+              </ol>
             </div>
           </div>
         )}
@@ -328,12 +347,25 @@ export default function StudentRegistration() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. 24E51A6665"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#78be21]/20 focus:border-[#78be21] outline-none transition-all text-slate-800 text-sm"
+                    placeholder="e.g. 24E51A1234"
+                    className={`w-full pl-10 pr-4 py-2.5 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-800 text-sm ${
+                      rollNumberError 
+                        ? 'border-red-300 focus:ring-red-200 focus:border-red-500 bg-red-50/20' 
+                        : 'border-slate-200 focus:ring-[#78be21]/20 focus:border-[#78be21]'
+                    }`}
                     value={formData.rollNumber}
                     onChange={(e) => handleInputChange('rollNumber', e.target.value)}
                   />
                 </div>
+                {rollNumberError && (
+                  <motion.p 
+                    initial={{ opacity: 0, y: -5 }} 
+                    animate={{ opacity: 1, y: 0 }} 
+                    className="text-red-500 text-[10px] font-bold mt-1.5 uppercase tracking-wider flex items-center gap-1"
+                  >
+                    <Info size={11} className="shrink-0" /> {rollNumberError}
+                  </motion.p>
+                )}
               </div>
 
               {/* Branch */}
@@ -364,7 +396,7 @@ export default function StudentRegistration() {
               {/* Year & Section */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Year</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Year & Semester</label>
                   <div className="relative">
                     <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                     <select
@@ -373,11 +405,15 @@ export default function StudentRegistration() {
                       value={formData.year}
                       onChange={(e) => handleInputChange('year', e.target.value)}
                     >
-                      <option value="">Year</option>
-                      <option value="1st Year (Not Applicable)">1st Year (Not Applicable)</option>
-                      <option value="2nd">2nd Year</option>
-                      <option value="3rd">3rd Year</option>
-                      <option value="4th">4th Year</option>
+                      <option value="">Select Semester</option>
+                      <option value="1st Year – 1st Sem">1st Year – 1st Sem</option>
+                      <option value="1st Year – 2nd Sem">1st Year – 2nd Sem</option>
+                      <option value="2nd Year – 1st Sem">2nd Year – 1st Sem</option>
+                      <option value="2nd Year – 2nd Sem">2nd Year – 2nd Sem</option>
+                      <option value="3rd Year – 1st Sem">3rd Year – 1st Sem</option>
+                      <option value="3rd Year – 2nd Sem">3rd Year – 2nd Sem</option>
+                      <option value="4th Year – 1st Sem">4th Year – 1st Sem</option>
+                      <option value="4th Year – 2nd Sem">4th Year – 2nd Sem</option>
                     </select>
                     <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none border-l border-slate-200 pl-2 text-slate-400">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" /></svg>

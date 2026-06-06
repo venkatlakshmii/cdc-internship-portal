@@ -1,13 +1,76 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion } from 'motion/react';
-import { CheckCircle, XCircle, Eye, ExternalLink, ShieldCheck, AlertCircle, AlertTriangle } from 'lucide-react';
+import { 
+  CheckCircle, XCircle, Eye, ExternalLink, ShieldCheck, AlertCircle, AlertTriangle,
+  Search, Filter, FileText, Download, X, Calendar, GraduationCap, ChevronDown
+} from 'lucide-react';
 
 export default function PrincipalDashboard() {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedApp, setSelectedApp] = useState<any>(null);
-  const [decision, setDecision] = useState({ finalStatus: 'Approved', remarks: '' });
+  const [finalStatus, setFinalStatus] = useState('Approved');
+  const [remarks, setRemarks] = useState('');
+
+  // Filter & Search State
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [branchFilter, setBranchFilter] = useState('all');
+  const [yearFilter, setYearFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async (format: 'pdf' | 'excel') => {
+    try {
+      setIsExporting(true);
+      const token = localStorage.getItem('token');
+      const endpoint = format === 'pdf' ? '/api/reports/export-pdf' : '/api/reports/export-excel';
+      
+      const response = await axios.get(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          module: 'approved',
+          branch: branchFilter,
+          semester: yearFilter,
+          status: statusFilter,
+          type: typeFilter,
+          startDate: startDate,
+          endDate: endDate
+        },
+        responseType: 'blob'
+      });
+      
+      const blob = new Blob([response.data], { 
+        type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `hitam-approved-internships-${Date.now()}.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Failed to export approved internships.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setStatusFilter('all');
+    setBranchFilter('all');
+    setYearFilter('all');
+    setTypeFilter('all');
+    setStartDate('');
+    setEndDate('');
+  };
 
   useEffect(() => {
     fetchApplications();
@@ -30,7 +93,7 @@ export default function PrincipalDashboard() {
   const handleDecision = async (id: string) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(`/api/internships/principal-decision/${id}`, decision, {
+      await axios.patch(`/api/internships/principal-decision/${id}`, { finalStatus, remarks }, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSelectedApp(null);
@@ -41,31 +104,211 @@ export default function PrincipalDashboard() {
     }
   };
 
+  const filteredApps = applications.filter(app => {
+    const studentName = app.studentDetails?.name || '';
+    const rollNo = app.studentDetails?.rollNumber || '';
+    const q = search.toLowerCase().trim();
+    const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+    const cleanSearch = rollMatch ? rollMatch[1] : q;
+    const matchSearch = studentName.toLowerCase().includes(cleanSearch) || 
+                        rollNo.toLowerCase().includes(cleanSearch);
+    
+    const matchStatus = statusFilter === 'all' || (() => {
+      const eligibility = app.eligibilityStatus.toLowerCase();
+      const finalSt = app.finalStatus?.toLowerCase() || '';
+      if (statusFilter === 'pending') return eligibility.includes('pending') || finalSt.includes('pending');
+      if (statusFilter === 'approved') return ['approved', '3 months approved', 'conditionally approved', '3 months + 3 months extension'].some(st => eligibility === st || finalSt === st);
+      if (statusFilter === 'not eligible') return eligibility.includes('not eligible') || finalSt.includes('not eligible');
+      return eligibility.includes(statusFilter.toLowerCase()) || finalSt.includes(statusFilter.toLowerCase());
+    })();
+
+    const matchBranch = branchFilter === 'all' || app.studentDetails?.branch === branchFilter;
+    const matchYear = yearFilter === 'all' || (app.studentDetails?.year && app.studentDetails.year.includes(yearFilter));
+    const matchType = typeFilter === 'all' || app.internshipDetails?.mode === typeFilter;
+    
+    const matchDate = (() => {
+      if (!startDate && !endDate) return true;
+      if (!app.internshipDetails?.fromDate) return false;
+      const appDateStr = typeof app.internshipDetails.fromDate === 'string'
+        ? app.internshipDetails.fromDate.substring(0, 10)
+        : new Date(app.internshipDetails.fromDate).toISOString().substring(0, 10);
+      if (startDate && appDateStr < startDate) return false;
+      if (endDate && appDateStr > endDate) return false;
+      return true;
+    })();
+
+    return matchSearch && matchStatus && matchBranch && matchYear && matchType && matchDate;
+  });
+
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading applications...</div>;
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Principal Dashboard</h2>
-          <p className="text-slate-500 text-sm mt-1">Review and provide final approval for internships</p>
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Principal Dashboard</h2>
+          <p className="text-slate-500 text-xs mt-0.5">Review student applications, provide final approvals, and generate internship records reports.</p>
         </div>
-        <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-slate-900/20">
-          <ShieldCheck size={24} />
+        <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg shadow-slate-900/20 shrink-0">
+          <ShieldCheck size={20} />
+        </div>
+      </div>
+
+      {/* Filters Bar */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+        <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+          <div className="relative w-full lg:w-80">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search by student name or roll..."
+              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-xs font-medium outline-none focus:ring-2 focus:ring-[#78be21]/20 focus:border-[#78be21] transition-all"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            {/* Status Filter */}
+            <div className="relative flex-1 sm:flex-none">
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <select
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="all">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="Rejected">Rejected</option>
+                <option value="not eligible">Not Eligible</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown size={12} />
+              </div>
+            </div>
+
+            {/* Branch Filter */}
+            <div className="relative flex-1 sm:flex-none">
+              <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <select
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+              >
+                <option value="all">All Branches</option>
+                <option value="CSE">CSE</option>
+                <option value="CSM">CSM</option>
+                <option value="ECE">ECE</option>
+                <option value="EEE">EEE</option>
+                <option value="ME">ME</option>
+                <option value="CE">CE</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown size={12} />
+              </div>
+            </div>
+
+            {/* Year Filter */}
+            <div className="relative flex-1 sm:flex-none">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <select
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                value={yearFilter}
+                onChange={(e) => setYearFilter(e.target.value)}
+              >
+                <option value="all">All Years</option>
+                <option value="2nd">2nd Year</option>
+                <option value="3rd">3rd Year</option>
+                <option value="4th">4th Year</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown size={12} />
+              </div>
+            </div>
+
+            {/* Internship Mode Filter */}
+            <div className="relative flex-1 sm:flex-none">
+              <FileText className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <select
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+              >
+                <option value="all">All Modes</option>
+                <option value="Online">Online</option>
+                <option value="Offline">Offline</option>
+                <option value="In-House">In-House</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown size={12} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Sub-toolbar: Date Inputs & Print/Export Buttons */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-3 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs font-bold text-slate-600">
+            <div className="flex items-center gap-2">
+              <span>From:</span>
+              <input
+                type="date"
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#78be21]/20 text-slate-700"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span>To:</span>
+              <input
+                type="date"
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#78be21]/20 text-slate-700"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+            <button
+              onClick={() => handleExport('pdf')}
+              disabled={isExporting}
+              className="px-4 py-2 bg-[#78be21] hover:bg-[#68a61d] disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-[#78be21]/15 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <FileText size={14} />
+              Print (PDF)
+            </button>
+            <button
+              onClick={() => handleExport('excel')}
+              disabled={isExporting}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/15 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download size={14} />
+              Export Excel
+            </button>
+            <button
+              onClick={handleResetFilters}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <X size={14} />
+              Reset
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="grid gap-6">
-        {applications.length === 0 ? (
+        {filteredApps.length === 0 ? (
           <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
               <CheckCircle size={32} />
             </div>
             <h3 className="text-slate-900 font-bold text-lg">No pending approvals</h3>
-            <p className="text-slate-500 text-sm mt-1">All forwarded applications have been processed.</p>
+            <p className="text-slate-500 text-sm mt-1">All forwarded applications have been processed or match your active filters.</p>
           </div>
         ) : (
-          applications.map((app) => (
+          filteredApps.map((app) => (
             <motion.div
               key={app._id}
               initial={{ opacity: 0, y: 10 }}
@@ -73,18 +316,45 @@ export default function PrincipalDashboard() {
               className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-6"
             >
               <div className="space-y-3">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <h3 className="text-lg font-bold text-slate-900">{app.studentDetails.name}</h3>
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
-                    ['Approved', '3 Months Approved'].includes(app.eligibilityStatus) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                    ['Conditionally Approved', '3 Months + 3 Months Extension'].includes(app.eligibilityStatus) ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                    'bg-blue-50 text-blue-600 border-blue-100'
-                  }`}>
-                    CDC: {app.eligibilityStatus}
-                  </span>
+                  {(() => {
+                    if (app.cdcRecommendation === 'Approved' || ['Approved', '3 Months Approved', '3 Months + 3 Months Extension'].includes(app.eligibilityStatus)) {
+                      return (
+                        <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-emerald-50 text-emerald-600 border-emerald-100 uppercase tracking-wider">
+                          CDC Recommended: Approved
+                        </span>
+                      );
+                    }
+                    if (app.cdcRecommendation === 'Rejected' || app.eligibilityStatus.includes('Rejected by CDC')) {
+                      return (
+                        <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-red-50 text-red-600 border-red-100 uppercase tracking-wider">
+                          CDC Recommended: Rejected
+                        </span>
+                      );
+                    }
+                    if (app.cdcRecommendation === 'Needs Clarification' || app.eligibilityStatus === 'Clarification Required by CDC' || app.eligibilityStatus === 'Needs Clarification') {
+                      return (
+                        <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-amber-50 text-amber-600 border-amber-100 uppercase tracking-wider">
+                          CDC Recommended: Needs Clarification
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-slate-50 text-slate-600 border-slate-100 uppercase tracking-wider">
+                        CDC Recommended: Pending
+                      </span>
+                    );
+                  })()}
+                  {app.hasAcademicConflict && (
+                    <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 uppercase" title={app.conflictDetails || 'Academic Conflict'}>
+                      <AlertTriangle size={12} className="text-amber-500" />
+                      Conflict Detected
+                    </span>
+                  )}
                 </div>
                 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-x-8 gap-y-2 text-sm">
                   <div>
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Company</p>
                     <p className="text-slate-700 font-medium">{app.internshipDetails.companyName}</p>
@@ -101,17 +371,25 @@ export default function PrincipalDashboard() {
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Attendance</p>
                     <p className="text-emerald-500 font-bold">{app.studentDetails.attendancePercentage}%</p>
                   </div>
+                  <div>
+                    <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Bands (SPF | CDC)</p>
+                    <p className="text-slate-700 font-bold">{app.spfBand || 'N/A'} | {app.cdcBand || 'N/A'}</p>
+                  </div>
                 </div>
+                {app.cdcRemarks && (
+                  <p className="text-xs text-slate-500 mt-1 italic bg-slate-50 p-2 rounded-xl border border-slate-100/60">
+                    <strong>CDC Remarks:</strong> "{app.cdcRemarks}"
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-3 border-t md:border-t-0 pt-4 md:pt-0">
                 <button
                   onClick={() => {
                     setSelectedApp(app);
-                    setDecision({
-                      finalStatus: app.finalStatus || 'Approved',
-                      remarks: app.remarks || ''
-                    });
+                    const initialStatus = (app.finalStatus === 'Approved' || app.finalStatus === 'Rejected') ? app.finalStatus : 'Approved';
+                    setFinalStatus(initialStatus);
+                    setRemarks(app.remarks || '');
                   }}
                   className="px-5 py-2.5 bg-[#78be21] hover:bg-[#68a61d] text-white font-bold rounded-xl shadow-lg shadow-[#78be21]/20 transition-all active:scale-[0.98] flex items-center gap-2"
                 >
@@ -139,16 +417,25 @@ export default function PrincipalDashboard() {
             
             <div className="p-8 space-y-8 max-h-[70vh] overflow-auto">
               <div className="grid grid-cols-2 gap-8">
-                {((selectedApp.studentDetails.year === '2nd' || (selectedApp.studentDetails.year && selectedApp.studentDetails.year.includes('2nd')))) && (
+                {selectedApp.hasAcademicConflict && (
+                  <div className="col-span-2 p-3.5 bg-amber-50 border border-amber-200/60 rounded-xl text-amber-800 font-medium text-xs flex items-start gap-2.5">
+                    <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-amber-950">Academic Conflict Detected:</span>
+                      <p className="mt-0.5 leading-relaxed text-amber-800">{selectedApp.conflictDetails}</p>
+                    </div>
+                  </div>
+                )}
+                {(selectedApp.studentDetails.year.includes('2nd Year') || selectedApp.studentDetails.year === '3rd Year – 1st Sem') && (
                   <div className="col-span-2 p-3.5 bg-amber-50/80 border border-amber-200/60 rounded-xl text-amber-800 font-medium text-xs flex items-center gap-2.5 animate-pulse">
                     <AlertTriangle size={15} className="text-amber-500 shrink-0" />
-                    <span><strong>2nd Year Student Restriction:</strong> Max duration is 4 weeks (28 days) and eligible only for In-House internships.</span>
+                    <span><strong>Semester Eligibility Restriction:</strong> Students from 2nd Year – 1st Semester to 3rd Year – 1st Semester are eligible only for In-House Internships (Live Projects).</span>
                   </div>
                 )}
                 <div>
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Student Info</h4>
                   <p className="text-slate-900 font-bold">{selectedApp.studentDetails.name}</p>
-                  <p className="text-slate-500 text-sm">{selectedApp.studentDetails.rollNumber} | {selectedApp.studentDetails.branch}</p>
+                  <p className="text-slate-500 text-sm">{selectedApp.studentDetails.rollNumber} | {selectedApp.studentDetails.branch} | {selectedApp.studentDetails.year}</p>
                   <p className="text-slate-700 font-bold mt-2">Attendance: {selectedApp.studentDetails.attendancePercentage}%</p>
                   {selectedApp.studentDetails.cgpa !== undefined && (
                     <p className="text-slate-700 font-bold">CGPA: {Number(selectedApp.studentDetails.cgpa).toFixed(2)}</p>
@@ -161,16 +448,69 @@ export default function PrincipalDashboard() {
                   )}
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">CDC Review</h4>
-                  <p className="text-slate-900 font-bold">Bands: SPF {selectedApp.spfBand} | CDC {selectedApp.cdcBand}</p>
-                  <p className="text-slate-500 text-sm">Permissible: {selectedApp.permissibleDuration} Months</p>
-                  <p className={`font-bold mt-2 ${
-                    ['Approved', '3 Months Approved'].includes(selectedApp.eligibilityStatus) ? 'text-emerald-600' :
-                    ['Conditionally Approved', '3 Months + 3 Months Extension'].includes(selectedApp.eligibilityStatus) ? 'text-amber-600' :
-                    'text-red-500'
-                  }`}>Status: {selectedApp.eligibilityStatus}</p>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">CDC Review Assessment</h4>
+                  <p className="text-slate-900 text-sm font-bold">
+                    CDC Recommendation:{" "}
+                    <span className={`font-bold uppercase ${
+                      selectedApp.cdcRecommendation === 'Approved' ? 'text-emerald-600' :
+                      selectedApp.cdcRecommendation === 'Rejected' ? 'text-red-600' : 'text-amber-600'
+                    }`}>
+                      {selectedApp.cdcRecommendation === 'Approved' ? 'CDC Recommended: Approved' :
+                       selectedApp.cdcRecommendation === 'Rejected' ? 'CDC Recommended: Rejected' :
+                       selectedApp.cdcRecommendation === 'Needs Clarification' ? 'CDC Recommended: Needs Clarification' :
+                       `CDC Recommended: ${(selectedApp.cdcRecommendation || 'Pending')}`}
+                    </span>
+                  </p>
+                  <p className="text-slate-700 text-xs mt-1 font-semibold">
+                    Assigned Bands: SPF Band {selectedApp.spfBand || 'N/A'} | CDC Band {selectedApp.cdcBand || 'N/A'}
+                  </p>
+                  <p className="text-slate-500 text-xs mt-1">
+                    CDC Reviewed Date: {(() => {
+                      const cdcEvent = selectedApp.timeline?.find((e: any) => e.role === 'cdc');
+                      return cdcEvent ? new Date(cdcEvent.timestamp).toLocaleDateString() : 'N/A';
+                    })()}
+                  </p>
+                  {selectedApp.cdcRemarks && (
+                    <p className="text-slate-600 text-xs mt-2 bg-slate-50 border border-slate-100 p-2.5 rounded-xl italic">
+                      CDC Remarks: "{selectedApp.cdcRemarks}"
+                    </p>
+                  )}
+                  {selectedApp.criticalSubject && (
+                    <div className="mt-3.5 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+                      <span className="font-bold text-[10px] uppercase text-amber-800 tracking-wide block mb-0.5">Critical Subject Choice</span>
+                      <span className="text-slate-800 font-semibold text-xs leading-snug">{selectedApp.criticalSubject}</span>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Timeline History Tracker */}
+              {selectedApp.timeline && selectedApp.timeline.length > 0 && (
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                  <h4 className="text-sm font-bold text-slate-900">Application History Timeline</h4>
+                  <div className="relative pl-6 border-l-2 border-slate-200/80 space-y-5">
+                    {selectedApp.timeline.map((event: any, idx: number) => (
+                      <div key={idx} className="relative">
+                        <div className="absolute -left-[31px] top-1.5 w-4 h-4 bg-white border-2 border-[#78be21] rounded-full flex items-center justify-center">
+                          <div className="w-1.5 h-1.5 bg-[#78be21] rounded-full"></div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-slate-800">{event.status}</p>
+                          <p className="text-[10px] text-slate-400 font-semibold">{new Date(event.timestamp).toLocaleString()}</p>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          By: <span className="font-semibold text-slate-700">{event.updatedBy}</span> ({event.role})
+                        </p>
+                        {event.remarks && (
+                          <p className="text-xs text-slate-600 mt-1 italic pl-2 border-l-2 border-slate-200">
+                            "{event.remarks}"
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
                 <h4 className="text-sm font-bold text-slate-900">Final Decision</h4>
@@ -178,9 +518,9 @@ export default function PrincipalDashboard() {
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Status</label>
                     <select
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none"
-                      value={decision.finalStatus}
-                      onChange={(e) => setDecision({ ...decision, finalStatus: e.target.value })}
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold"
+                      value={finalStatus}
+                      onChange={(e) => setFinalStatus(e.target.value)}
                     >
                       <option value="Approved">Approve</option>
                       <option value="Rejected">Reject</option>
@@ -189,11 +529,11 @@ export default function PrincipalDashboard() {
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Remarks</label>
                     <textarea
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-sm"
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-sm text-slate-700"
                       rows={2}
                       placeholder="Add any additional comments..."
-                      value={decision.remarks}
-                      onChange={(e) => setDecision({ ...decision, remarks: e.target.value })}
+                      value={remarks}
+                      onChange={(e) => setRemarks(e.target.value)}
                     />
                   </div>
                 </div>
@@ -203,17 +543,18 @@ export default function PrincipalDashboard() {
                 <a
                   href={`/${selectedApp.attachments.offerLetter}`}
                   target="_blank"
-                  className="flex-1 py-3 border border-slate-200 rounded-xl text-slate-600 font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 transition-all"
+                  className="flex-1 py-3 border border-slate-200 rounded-xl text-slate-600 font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 transition-all cursor-pointer"
                 >
                   <ExternalLink size={16} /> View Offer Letter
                 </a>
                 <button
                   onClick={() => handleDecision(selectedApp._id)}
-                  className={`flex-1 py-3 text-white font-bold rounded-xl shadow-lg transition-all ${
-                    decision.finalStatus === 'Approved' ? 'bg-[#78be21] shadow-[#78be21]/20 hover:bg-[#68a61d]' : 'bg-red-500 shadow-red-500/20 hover:bg-red-600'
+                  className={`flex-1 py-3 text-white font-bold rounded-xl shadow-lg transition-all cursor-pointer ${
+                    finalStatus === 'Approved' ? 'bg-[#78be21] shadow-[#78be21]/20 hover:bg-[#68a61d]' :
+                    'bg-red-500 shadow-red-500/20 hover:bg-red-600'
                   }`}
                 >
-                  {decision.finalStatus === 'Approved' ? 'Confirm Approval' : 'Confirm Rejection'}
+                  {finalStatus === 'Approved' ? 'Confirm Approval' : 'Confirm Rejection'}
                 </button>
               </div>
             </div>

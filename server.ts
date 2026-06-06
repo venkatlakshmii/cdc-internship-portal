@@ -10,6 +10,9 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import authRoutes from './src/routes/auth.ts';
 import internshipRoutes from './src/routes/internships.ts';
 import reportRoutes from './src/routes/reports.ts';
+import completionRoutes from './src/routes/completions.ts';
+import messageRoutes from './src/routes/messages.ts';
+import portalControlRoutes from './src/routes/portalControl.ts';
 import { User } from './src/models/User.ts';
 
 const PORT = 3000;
@@ -47,6 +50,9 @@ async function startServer() {
   app.use('/api/auth', authRoutes);
   app.use('/api/internships', internshipRoutes);
   app.use('/api/reports', reportRoutes);
+  app.use('/api/completions', completionRoutes);
+  app.use('/api/messages', messageRoutes);
+  app.use('/api/portal-control', portalControlRoutes);
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
@@ -78,10 +84,7 @@ async function connectToMongo() {
   } catch (error) {
     console.error('Primary MongoDB connection failed:', error);
 
-    if (process.env.MONGODB_URI) {
-      throw error;
-    }
-
+    // If MONGODB_URI is set, we still fall back to in-memory MongoDB so the developer can run the app locally.
     console.log('Attempting in-memory MongoDB fallback...');
     try {
       memoryServer = await MongoMemoryServer.create();
@@ -102,9 +105,11 @@ async function connectToMongo() {
 
 async function seedUsers() {
   const users = [
-    { name: 'Student User', email: '24E51A6665@hitam.org', password: 'password123', role: 'student' },
+    { name: 'Student User', email: '24E51A1234@hitam.org', password: 'password123', role: 'student' },
     { name: 'CDC Faculty', email: 'cdc@hitam.org', password: 'password123', role: 'cdc' },
     { name: 'Principal', email: 'principal@hitam.org', password: 'password123', role: 'principal' },
+    { name: 'Head of Department', email: 'hod@hitam.org', password: 'password123', role: 'hod' },
+    { name: 'Dean Careers', email: 'dean@hitam.org', password: 'password123', role: 'dean' },
   ];
 
   for (const userData of users) {

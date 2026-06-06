@@ -1,14 +1,28 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion } from 'motion/react';
-import { Search, Filter, CheckCircle, AlertCircle, Eye, ExternalLink, AlertTriangle } from 'lucide-react';
+import { 
+  Search, Filter, CheckCircle, AlertCircle, Eye, ExternalLink, AlertTriangle,
+  FileText, Download, X, Calendar, GraduationCap, ChevronDown
+} from 'lucide-react';
 
 export default function CDCDashboard() {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
   const [selectedApp, setSelectedApp] = useState<any>(null);
-  const [bands, setBands] = useState({ spfBand: 'A', cdcBand: 'A' });
+  const [bands, setBands] = useState({ spfBand: '', cdcBand: '' });
+  const [cdcRecommendation, setCdcRecommendation] = useState('Approved');
+  const [cdcRemarks, setCdcRemarks] = useState('');
+
+  // Filter & Search State
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [branchFilter, setBranchFilter] = useState('all');
+  const [yearFilter, setYearFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     fetchApplications();
@@ -29,9 +43,18 @@ export default function CDCDashboard() {
   };
 
   const handleReview = async (id: string) => {
+    if (!bands.spfBand || !bands.cdcBand) {
+      alert('Please select both SPF Band and CDC Band before submitting assessment.');
+      return;
+    }
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(`/api/internships/cdc-review/${id}`, bands, {
+      await axios.patch(`/api/internships/cdc-review/${id}`, {
+        spfBand: bands.spfBand,
+        cdcBand: bands.cdcBand,
+        cdcRecommendation,
+        cdcRemarks
+      }, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSelectedApp(null);
@@ -42,24 +65,88 @@ export default function CDCDashboard() {
     }
   };
 
-  const handleReject = async (id: string) => {
-    if (!window.confirm('Are you sure you want to reject this internship application?')) return;
+  const handleExport = async (format: 'pdf' | 'excel') => {
     try {
+      setIsExporting(true);
       const token = localStorage.getItem('token');
-      await axios.patch(`/api/internships/cdc-review/${id}`, { action: 'reject' }, {
+      const endpoint = format === 'pdf' ? '/api/reports/export-pdf' : '/api/reports/export-excel';
+      
+      const response = await axios.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
+        params: {
+          module: 'approved',
+          branch: branchFilter,
+          semester: yearFilter,
+          status: statusFilter,
+          type: typeFilter,
+          startDate: startDate,
+          endDate: endDate
+        },
+        responseType: 'blob'
       });
-      setSelectedApp(null);
-      fetchApplications();
+      
+      const blob = new Blob([response.data], { 
+        type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `hitam-approved-internships-${Date.now()}.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Error rejecting application:', err);
-      alert('Failed to reject application');
+      console.error('Export error:', err);
+      alert('Failed to export approved internships.');
+    } finally {
+      setIsExporting(false);
     }
   };
 
+  const handleResetFilters = () => {
+    setSearch('');
+    setStatusFilter('all');
+    setBranchFilter('all');
+    setYearFilter('all');
+    setTypeFilter('all');
+    setStartDate('');
+    setEndDate('');
+  };
+
   const filteredApps = applications.filter(app => {
-    if (filter === 'all') return true;
-    return app.eligibilityStatus.toLowerCase().includes(filter.toLowerCase());
+    const studentName = app.studentDetails?.name || '';
+    const rollNo = app.studentDetails?.rollNumber || '';
+    const q = search.toLowerCase().trim();
+    const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+    const cleanSearch = rollMatch ? rollMatch[1] : q;
+    const matchSearch = studentName.toLowerCase().includes(cleanSearch) || 
+                        rollNo.toLowerCase().includes(cleanSearch);
+    
+    const matchStatus = statusFilter === 'all' || (() => {
+      const eligibility = app.eligibilityStatus.toLowerCase();
+      if (statusFilter === 'pending') return eligibility.includes('pending');
+      if (statusFilter === 'approved') return ['approved', '3 months approved', 'conditionally approved', '3 months + 3 months extension'].some(st => eligibility === st);
+      if (statusFilter === 'not eligible') return eligibility.includes('not eligible');
+      return eligibility.includes(statusFilter.toLowerCase());
+    })();
+
+    const matchBranch = branchFilter === 'all' || app.studentDetails?.branch === branchFilter;
+    const matchYear = yearFilter === 'all' || (app.studentDetails?.year && app.studentDetails.year.includes(yearFilter));
+    const matchType = typeFilter === 'all' || app.internshipDetails?.mode === typeFilter;
+    
+    const matchDate = (() => {
+      if (!startDate && !endDate) return true;
+      if (!app.internshipDetails?.fromDate) return false;
+      const appDateStr = typeof app.internshipDetails.fromDate === 'string'
+        ? app.internshipDetails.fromDate.substring(0, 10)
+        : new Date(app.internshipDetails.fromDate).toISOString().substring(0, 10);
+      if (startDate && appDateStr < startDate) return false;
+      if (endDate && appDateStr > endDate) return false;
+      return true;
+    })();
+
+    return matchSearch && matchStatus && matchBranch && matchYear && matchType && matchDate;
   });
 
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading applications...</div>;
@@ -69,22 +156,149 @@ export default function CDCDashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">CDC Faculty Dashboard</h2>
-          <p className="text-slate-500 text-sm mt-1">Review student applications and assign bands</p>
+          <p className="text-slate-500 text-sm mt-1">Review student applications, make recommendations, and assign bands.</p>
         </div>
-        
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <select
-              className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-[#78be21]/20"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
+      </div>
+
+      {/* Filters Bar */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+        <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+          <div className="relative w-full lg:w-80">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search by student name or roll..."
+              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-xs font-medium outline-none focus:ring-2 focus:ring-[#78be21]/20 focus:border-[#78be21] transition-all"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            {/* Status Filter */}
+            <div className="relative flex-1 sm:flex-none">
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <select
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="all">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="not eligible">Not Eligible</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown size={12} />
+              </div>
+            </div>
+
+            {/* Branch Filter */}
+            <div className="relative flex-1 sm:flex-none">
+              <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <select
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+              >
+                <option value="all">All Branches</option>
+                <option value="CSE">CSE</option>
+                <option value="CSM">CSM</option>
+                <option value="ECE">ECE</option>
+                <option value="EEE">EEE</option>
+                <option value="ME">ME</option>
+                <option value="CE">CE</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown size={12} />
+              </div>
+            </div>
+
+            {/* Year Filter */}
+            <div className="relative flex-1 sm:flex-none">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <select
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                value={yearFilter}
+                onChange={(e) => setYearFilter(e.target.value)}
+              >
+                <option value="all">All Years</option>
+                <option value="2nd">2nd Year</option>
+                <option value="3rd">3rd Year</option>
+                <option value="4th">4th Year</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown size={12} />
+              </div>
+            </div>
+
+            {/* Internship Mode Filter */}
+            <div className="relative flex-1 sm:flex-none">
+              <FileText className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <select
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+              >
+                <option value="all">All Modes</option>
+                <option value="Online">Online</option>
+                <option value="Offline">Offline</option>
+                <option value="In-House">In-House</option>
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronDown size={12} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Sub-toolbar: Date Inputs & Print/Export Buttons */}
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-3 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs font-bold text-slate-600">
+            <div className="flex items-center gap-2">
+              <span>From:</span>
+              <input
+                type="date"
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#78be21]/20 text-slate-700"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span>To:</span>
+              <input
+                type="date"
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#78be21]/20 text-slate-700"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+            <button
+              onClick={() => handleExport('pdf')}
+              disabled={isExporting}
+              className="px-4 py-2 bg-[#78be21] hover:bg-[#68a61d] disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-[#78be21]/15 transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="not eligible">Not Eligible</option>
-            </select>
+              <FileText size={14} />
+              Print (PDF)
+            </button>
+            <button
+              onClick={() => handleExport('excel')}
+              disabled={isExporting}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/15 transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download size={14} />
+              Export Excel
+            </button>
+            <button
+              onClick={handleResetFilters}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <X size={14} />
+              Reset
+            </button>
           </div>
         </div>
       </div>
@@ -121,6 +335,8 @@ export default function CDCDashboard() {
                     ['Approved', '3 Months Approved'].includes(app.eligibilityStatus) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
                     ['Conditionally Approved', '3 Months + 3 Months Extension'].includes(app.eligibilityStatus) ? 'bg-amber-50 text-amber-600 border-amber-100' :
                     app.eligibilityStatus === 'Not Eligible' ? 'bg-red-50 text-red-600 border-red-100' :
+                    app.eligibilityStatus.includes('Rejected by CDC') ? 'bg-red-50 text-red-600 border-red-100' :
+                    app.eligibilityStatus === 'Needs Clarification' ? 'bg-amber-50 text-amber-600 border-amber-100' :
                     'bg-blue-50 text-blue-600 border-blue-100'
                   }`}>
                     {app.eligibilityStatus}
@@ -131,9 +347,11 @@ export default function CDCDashboard() {
                     onClick={() => {
                       setSelectedApp(app);
                       setBands({
-                        spfBand: app.spfBand || 'A',
-                        cdcBand: app.cdcBand || 'A'
+                        spfBand: app.spfBand || '',
+                        cdcBand: app.cdcBand || ''
                       });
+                      setCdcRecommendation(app.cdcRecommendation || 'Approved');
+                      setCdcRemarks(app.cdcRemarks || '');
                     }}
                     className="p-2 text-slate-400 hover:text-[#78be21] transition-colors"
                     title="Review Details"
@@ -201,16 +419,46 @@ export default function CDCDashboard() {
                 </div>
               </div>
 
+              {/* Recommendation and Remarks */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                <h4 className="text-sm font-bold text-slate-900">CDC Assessment</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Recommendation</label>
+                    <select
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-sm text-slate-700 font-semibold"
+                      value={cdcRecommendation}
+                      onChange={(e) => setCdcRecommendation(e.target.value)}
+                    >
+                      <option value="Approved">Approved</option>
+                      <option value="Rejected">Rejected</option>
+                      <option value="Needs Clarification">Needs Clarification</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Remarks</label>
+                    <textarea
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-sm text-slate-700"
+                      rows={2}
+                      placeholder="Add assessment remarks..."
+                      value={cdcRemarks}
+                      onChange={(e) => setCdcRemarks(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
                 <h4 className="text-sm font-bold text-slate-900">Assign Bands</h4>
                 <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">SPF Band</label>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">SPF Band <span className="text-red-500">*</span></label>
                     <select
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none"
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold"
                       value={bands.spfBand}
                       onChange={(e) => setBands({ ...bands, spfBand: e.target.value })}
                     >
+                      <option value="">Select SPF Band</option>
                       <option value="A">Band A</option>
                       <option value="B">Band B</option>
                       <option value="C">Band C</option>
@@ -218,12 +466,13 @@ export default function CDCDashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">CDC Band</label>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">CDC Band <span className="text-red-500">*</span></label>
                     <select
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none"
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold"
                       value={bands.cdcBand}
                       onChange={(e) => setBands({ ...bands, cdcBand: e.target.value })}
                     >
+                      <option value="">Select CDC Band</option>
                       <option value="A">Band A</option>
                       <option value="B">Band B</option>
                       <option value="C">Band C</option>
@@ -242,17 +491,10 @@ export default function CDCDashboard() {
                   <ExternalLink size={16} /> View Offer Letter
                 </a>
                 <button
-                  type="button"
-                  onClick={() => handleReject(selectedApp._id)}
-                  className="w-full sm:w-auto px-6 py-3 border border-red-200 hover:border-red-300 text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100/70 font-bold rounded-xl text-sm transition-all cursor-pointer text-center"
-                >
-                  Reject Application
-                </button>
-                <button
                   onClick={() => handleReview(selectedApp._id)}
                   className="w-full sm:flex-1 py-3 bg-[#78be21] text-white font-bold rounded-xl shadow-lg shadow-[#78be21]/20 hover:bg-[#68a61d] transition-all cursor-pointer"
                 >
-                  Submit Review
+                  Submit Assessment
                 </button>
               </div>
             </div>

@@ -28,6 +28,9 @@ export default function MonthlyReports() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState('all');
+  const [branchFilter, setBranchFilter] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   // Review Modal State
   const [reviewingReport, setReviewingReport] = useState<any>(null);
@@ -86,6 +89,52 @@ export default function MonthlyReports() {
     } finally {
       setDataLoading(false);
     }
+  };
+
+  const handleExport = async (format: 'pdf' | 'excel') => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      const endpoint = format === 'pdf' ? '/api/reports/export-pdf' : '/api/reports/export-excel';
+      
+      const response = await axios.get(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          module: 'reports',
+          branch: branchFilter,
+          status: statusFilter,
+          startDate: startDate,
+          endDate: endDate
+        },
+        responseType: 'blob'
+      });
+      
+      const blob = new Blob([response.data], { 
+        type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `hitam-monthly-reports-${Date.now()}.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Failed to export report.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setStatusFilter('all');
+    setMonthFilter('all');
+    setBranchFilter('all');
+    setStartDate('');
+    setEndDate('');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,8 +234,11 @@ export default function MonthlyReports() {
   const filteredReports = reports.filter(r => {
     const studentName = r.studentDetails?.name || '';
     const rollNo = r.studentDetails?.rollNumber || '';
-    const matchSearch = studentName.toLowerCase().includes(search.toLowerCase()) || 
-                        rollNo.toLowerCase().includes(search.toLowerCase());
+    const q = search.toLowerCase().trim();
+    const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+    const cleanSearch = rollMatch ? rollMatch[1] : q;
+    const matchSearch = studentName.toLowerCase().includes(cleanSearch) || 
+                        rollNo.toLowerCase().includes(cleanSearch);
     
     const matchStatus = statusFilter === 'all' || r.status === statusFilter;
     const matchMonth = monthFilter === 'all' || (() => {
@@ -197,7 +249,17 @@ export default function MonthlyReports() {
       return r.month === monthFilter;
     })();
 
-    return matchSearch && matchStatus && matchMonth;
+    const matchBranch = branchFilter === 'all' || r.studentDetails?.branch === branchFilter;
+
+    const matchDate = (() => {
+      if (!startDate && !endDate) return true;
+      const created = new Date(r.createdAt);
+      if (startDate && created < new Date(startDate)) return false;
+      if (endDate && created > new Date(endDate + 'T23:59:59')) return false;
+      return true;
+    })();
+
+    return matchSearch && matchStatus && matchMonth && matchBranch && matchDate;
   });
 
   const getStatusBadge = (status: string, size = 10) => {
@@ -433,53 +495,128 @@ export default function MonthlyReports() {
       ) : (
         /* CDC / Principal Review Dashboard */
         <div className="space-y-5">
-          {/* Filtering Header Panel */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between shadow-sm">
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                placeholder="Search by name or roll number..."
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-xs font-medium outline-none focus:ring-2 focus:ring-[#78be21]/20 focus:border-[#78be21] transition-all"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+          {/* Filters Bar */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+            <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+              <div className="relative w-full lg:w-80">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search by student name or roll..."
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-xs font-medium outline-none focus:ring-2 focus:ring-[#78be21]/20 focus:border-[#78be21] transition-all"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                {/* Status Filter */}
+                <div className="relative flex-1 sm:flex-none">
+                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <select
+                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="Pending CDC Review">Pending CDC Review</option>
+                    <option value="Pending Principal Approval">Pending Principal Approval</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    <ChevronDown size={12} />
+                  </div>
+                </div>
+
+                {/* Branch Filter */}
+                <div className="relative flex-1 sm:flex-none">
+                  <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <select
+                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                    value={branchFilter}
+                    onChange={(e) => setBranchFilter(e.target.value)}
+                  >
+                    <option value="all">All Branches</option>
+                    <option value="CSE">CSE</option>
+                    <option value="CSM">CSM</option>
+                    <option value="ECE">ECE</option>
+                    <option value="EEE">EEE</option>
+                    <option value="ME">ME</option>
+                    <option value="CE">CE</option>
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    <ChevronDown size={12} />
+                  </div>
+                </div>
+
+                {/* Month Filter */}
+                <div className="relative flex-1 sm:flex-none">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <select
+                    className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
+                    value={monthFilter}
+                    onChange={(e) => setMonthFilter(e.target.value)}
+                  >
+                    <option value="all">All Months</option>
+                    {monthsList.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    <ChevronDown size={12} />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-              <div className="relative flex-1 md:flex-none">
-                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                <select
-                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="Pending CDC Review">Pending CDC Review</option>
-                  <option value="Pending Principal Approval">Pending Principal Approval</option>
-                  <option value="Approved">Approved</option>
-                  <option value="Rejected">Rejected</option>
-                </select>
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                  <ChevronDown size={12} />
+            {/* Sub-toolbar: Date Inputs & Print/Export Buttons */}
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-3 border-t border-slate-100">
+              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs font-bold text-slate-600">
+                <div className="flex items-center gap-2">
+                  <span>From:</span>
+                  <input
+                    type="date"
+                    className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#78be21]/20 text-slate-700"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span>To:</span>
+                  <input
+                    type="date"
+                    className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#78be21]/20 text-slate-700"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
                 </div>
               </div>
 
-              <div className="relative flex-1 md:flex-none">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                <select
-                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-[#78be21]/20 cursor-pointer appearance-none text-slate-700"
-                  value={monthFilter}
-                  onChange={(e) => setMonthFilter(e.target.value)}
+              <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+                <button
+                  onClick={() => handleExport('pdf')}
+                  disabled={loading}
+                  className="px-4 py-2 bg-[#78be21] hover:bg-[#68a61d] disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-[#78be21]/15 transition-all flex items-center gap-1.5 cursor-pointer"
                 >
-                  <option value="all">All Months</option>
-                  {monthsList.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                  <ChevronDown size={12} />
-                </div>
+                  <FileText size={14} />
+                  Print (PDF)
+                </button>
+                <button
+                  onClick={() => handleExport('excel')}
+                  disabled={loading}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/15 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download size={14} />
+                  Export Excel
+                </button>
+                <button
+                  onClick={handleResetFilters}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <X size={14} />
+                  Reset
+                </button>
               </div>
             </div>
           </div>

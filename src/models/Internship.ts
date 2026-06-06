@@ -38,21 +38,35 @@ const InternshipSchema = new mongoose.Schema({
     joiningLetter: { type: String }, // path
     internshipProof: [{ type: String }], // paths
   },
+  criticalSubject: { type: String },
   spfBand: { type: String, enum: ['A', 'B', 'C', 'D', null], default: null },
   cdcBand: { type: String, enum: ['A', 'B', 'C', 'D', null], default: null },
   proposedDuration: { type: Number },
   permissibleDuration: { type: Number },
   eligibilityStatus: { 
     type: String, 
-    enum: ['Pending CDC Review', 'Approved', 'Conditionally Approved', '3 Months Approved', '3 Months + 3 Months Extension', 'Not Eligible'], 
+    enum: ['Pending CDC Review', 'Approved', 'Conditionally Approved', '3 Months Approved', '3 Months + 3 Months Extension', 'Not Eligible', 'Rejected by CDC – Pending Principal Review', 'Needs Clarification', 'Clarification Required by CDC', 'Rejected'], 
     default: 'Pending CDC Review' 
   },
   finalStatus: { 
     type: String, 
-    enum: ['Pending Principal Approval', 'Approved', 'Rejected'], 
+    enum: ['Pending Principal Approval', 'Approved', 'Rejected', 'Request Changes', 'Put On Hold'], 
     default: 'Pending Principal Approval' 
   },
   remarks: { type: String },
+  cdcRecommendation: { type: String, enum: ['Approved', 'Rejected', 'Needs Clarification', 'Pending'], default: 'Pending' },
+  cdcRemarks: { type: String, default: '' },
+  principalDecision: { type: String, enum: ['Approved', 'Rejected', 'Request Changes', 'Put On Hold', 'Pending'], default: 'Pending' },
+  principalRemarks: { type: String, default: '' },
+  timeline: [{
+    status: { type: String },
+    updatedBy: { type: String },
+    role: { type: String },
+    remarks: { type: String },
+    timestamp: { type: Date, default: Date.now }
+  }],
+  hasAcademicConflict: { type: Boolean, default: false },
+  conflictDetails: { type: String, default: '' },
 }, { timestamps: true });
 
 export const Internship = mongoose.model('Internship', InternshipSchema);

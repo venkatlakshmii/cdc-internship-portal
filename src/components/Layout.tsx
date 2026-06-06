@@ -1,9 +1,32 @@
-import { Outlet, useNavigate, Link } from 'react-router-dom';
-import { LogOut, LayoutDashboard, FilePlus, Users, ShieldCheck, User, FileText } from 'lucide-react';
+import { useState, useEffect, Suspense } from 'react';
+import { Outlet, useNavigate, Link, useLocation } from 'react-router-dom';
+import { LogOut, LayoutDashboard, FilePlus, Users, ShieldCheck, User, FileText, MessageSquare } from 'lucide-react';
+import axios from 'axios';
 
 export default function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = JSON.parse(localStorage.getItem('user') || 'null');
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const response = await axios.get('/api/messages/unread-count', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setUnreadCount(response.data.unreadCount || 0);
+      } catch (err) {
+        console.error('Error fetching unread count:', err);
+      }
+    };
+
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 20000);
+    return () => clearInterval(interval);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -44,6 +67,28 @@ export default function Layout() {
       <div className="flex flex-1">
         <aside className="w-64 bg-white border-r border-slate-200 p-4 hidden md:block">
           <div className="space-y-1">
+            {/* Common Menu Option: Messages & Queries */}
+            <Link
+              to="/messages"
+              className={`flex items-center justify-between px-3 py-2 rounded-lg transition-all font-medium text-sm ${
+                location.pathname === '/messages' || location.pathname === '/hod' || location.pathname === '/dean'
+                  ? 'bg-slate-50 text-[#78be21] font-bold'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-[#78be21]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <MessageSquare size={18} />
+                <span>Messages & Queries</span>
+              </div>
+              {unreadCount > 0 && (
+                <span className="bg-[#78be21] text-white text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
+                  {unreadCount}
+                </span>
+              )}
+            </Link>
+
+            <div className="h-px bg-slate-100 my-3" />
+
             {user?.role === 'student' && (
               <>
                 <Link
@@ -61,11 +106,11 @@ export default function Layout() {
                   Dashboard
                 </Link>
                 <Link
-                  to="/student/apply"
+                  to="/student/applications"
                   className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-[#78be21] rounded-lg transition-all font-medium text-sm"
                 >
                   <FilePlus size={18} />
-                  Apply Internship
+                  Applications
                 </Link>
                 <Link
                   to="/student/reports"
@@ -73,6 +118,13 @@ export default function Layout() {
                 >
                   <FileText size={18} />
                   Monthly Report
+                </Link>
+                <Link
+                  to="/student/completion"
+                  className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-[#78be21] rounded-lg transition-all font-medium text-sm"
+                >
+                  <ShieldCheck size={18} />
+                  Internship Completion
                 </Link>
               </>
             )}
@@ -92,6 +144,13 @@ export default function Layout() {
                   <FileText size={18} />
                   Monthly Reports
                 </Link>
+                <Link
+                  to="/cdc/completions"
+                  className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-[#78be21] rounded-lg transition-all font-medium text-sm"
+                >
+                  <ShieldCheck size={18} />
+                  Completion Reports
+                </Link>
               </>
             )}
             {user?.role === 'principal' && (
@@ -110,13 +169,48 @@ export default function Layout() {
                   <FileText size={18} />
                   Monthly Reports
                 </Link>
+                <Link
+                  to="/principal/completions"
+                  className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-[#78be21] rounded-lg transition-all font-medium text-sm"
+                >
+                  <ShieldCheck size={18} />
+                  Completion Reports
+                </Link>
+              </>
+            )}
+
+            {(user?.role === 'cdc' || user?.role === 'principal') && (
+              <>
+                <div className="h-px bg-slate-100 my-3" />
+                <Link
+                  to="/admin/control"
+                  className={`flex items-center justify-between px-3 py-2 rounded-lg transition-all font-medium text-sm ${
+                    location.pathname === '/admin/control'
+                      ? 'bg-slate-50 text-[#78be21] font-bold'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-[#78be21]'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <ShieldCheck size={18} />
+                    <span>Portal Control Center</span>
+                  </div>
+                </Link>
               </>
             )}
           </div>
         </aside>
 
         <main className="flex-1 p-8 overflow-auto">
-          <Outlet />
+          <Suspense fallback={
+            <div className="flex items-center justify-center h-64 text-slate-400">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 border-4 border-[#78be21] border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-xs font-semibold text-slate-400">Loading module...</span>
+              </div>
+            </div>
+          }>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

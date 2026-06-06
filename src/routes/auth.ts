@@ -24,8 +24,9 @@ router.post('/register', async (req, res) => {
     }
 
     const emailStr = email.toLowerCase().trim();
-    if (!emailStr.endsWith('@hitam.org')) {
-      return res.status(400).json({ message: 'Email must follow the student format ending in @hitam.org' });
+    const hitamEmailRegex = /^[0-9]{2}e51a[0-9a-z]{4}@hitam\.org$/;
+    if (!hitamEmailRegex.test(emailStr)) {
+      return res.status(400).json({ message: 'Email must follow the official student format ending in @hitam.org (e.g. 24E51A1234@hitam.org)' });
     }
 
     if (emailStr === 'cdc@hitam.org' || emailStr === 'principal@hitam.org') {
@@ -34,7 +35,7 @@ router.post('/register', async (req, res) => {
 
     // In-memory Fallback checks
     if (mongoose.connection.readyState !== 1) {
-      const existingUser = memoryUsers.find(u => u.email === emailStr) || (emailStr === '24e51a6665@hitam.org' ? { email: '24e51a6665@hitam.org' } : null);
+      const existingUser = memoryUsers.find(u => u.email === emailStr) || (emailStr === '24e51a1234@hitam.org' ? { email: '24e51a1234@hitam.org' } : null);
       if (existingUser) {
         return res.status(400).json({ message: 'User already exists' });
       }
@@ -118,9 +119,11 @@ router.post('/login', async (req, res) => {
       }
 
       const fallbackUsers = [
-        { name: 'Student User', email: '24E51A6665@hitam.org', password: 'password123', role: 'student' },
+        { name: 'Student User', email: '24E51A1234@hitam.org', password: 'password123', role: 'student' },
         { name: 'CDC Faculty', email: 'cdc@hitam.org', password: 'password123', role: 'cdc' },
         { name: 'Principal', email: 'principal@hitam.org', password: 'password123', role: 'principal' },
+        { name: 'Head of Department', email: 'hod@hitam.org', password: 'password123', role: 'hod' },
+        { name: 'Dean Careers', email: 'dean@hitam.org', password: 'password123', role: 'dean' },
       ];
       
       const fallbackUser = fallbackUsers.find(u => u.email.toLowerCase() === email?.trim().toLowerCase() && u.password === password);
@@ -180,8 +183,8 @@ router.get('/profile', authenticate, async (req: AuthRequest, res) => {
 
       return res.json({
         name: 'Student User',
-        email: req.user?.email || '24E51A6665@hitam.org',
-        rollNumber: '24E51A6665',
+        email: req.user?.email || '24E51A1234@hitam.org',
+        rollNumber: '24E51A1234',
         branch: 'CSE',
         year: '4th',
         section: 'A',
@@ -248,6 +251,114 @@ router.post('/profile', authenticate, async (req: AuthRequest, res) => {
   } catch (error) {
     console.error('Profile update error:', error);
     res.status(500).json({ message: 'Error updating profile' });
+  }
+});
+
+// POST /api/auth/forgot-password/verify - Verify student email exists
+router.post('/forgot-password/verify', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required.' });
+    }
+    const emailStr = email.toLowerCase().trim();
+    
+    if (mongoose.connection.readyState !== 1) {
+      // In-memory fallback verification
+      const fallbackUsers = [
+        { name: 'Student User', email: '24e51a1234@hitam.org', role: 'student' }
+      ];
+      const exists = memoryUsers.find(u => u.email === emailStr) || fallbackUsers.find(u => u.email === emailStr);
+      if (!exists || exists.role !== 'student') {
+        return res.status(404).json({ message: 'Student email not found.' });
+      }
+      return res.json({ message: 'Email verified successfully.' });
+    }
+
+    const user = await User.findOne({ email: new RegExp(`^${emailStr}$`, 'i'), role: 'student' });
+    if (!user) {
+      return res.status(404).json({ message: 'Student email not found.' });
+    }
+    res.json({ message: 'Email verified successfully.' });
+  } catch (error) {
+    console.error('Verify email error:', error);
+    res.status(500).json({ message: 'Error verifying email.' });
+  }
+});
+
+// POST /api/auth/forgot-password/reset - Reset student password
+router.post('/forgot-password/reset', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+    if (!email || !newPassword) {
+      return res.status(400).json({ message: 'Email and new password are required.' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters long.' });
+    }
+
+    const emailStr = email.toLowerCase().trim();
+
+    if (mongoose.connection.readyState !== 1) {
+      // Fallback checks
+      const existsIndex = memoryUsers.findIndex(u => u.email === emailStr);
+      
+      // In-memory uniqueness check
+      for (const student of memoryUsers.filter(u => u.role === 'student' && u.email !== emailStr)) {
+        const isMatch = await bcrypt.compare(newPassword, student.password);
+        if (isMatch) {
+          return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
+        }
+      }
+      if (newPassword === 'password123') {
+        return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      if (existsIndex !== -1) {
+        memoryUsers[existsIndex].password = hashedPassword;
+      } else {
+        // Seeded default student in-memory setup
+        const newUser = {
+          _id: `mem-${Date.now()}`,
+          name: 'Student User',
+          email: emailStr,
+          password: hashedPassword,
+          role: 'student',
+          profileRegistered: false
+        };
+        memoryUsers.push(newUser);
+      }
+
+      console.log(`[PASSWORD RESET FALLBACK] Password reset for: ${emailStr}`);
+      return res.json({ message: 'Password reset successfully.' });
+    }
+
+    // DB uniqueness check
+    const studentUsers = await User.find({ role: 'student', email: { $not: new RegExp(`^${emailStr}$`, 'i') } });
+    for (const student of studentUsers) {
+      const isMatch = await bcrypt.compare(newPassword, student.password);
+      if (isMatch) {
+        return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const user = await User.findOneAndUpdate(
+      { email: new RegExp(`^${emailStr}$`, 'i'), role: 'student' },
+      { password: hashedPassword },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: 'Student email not found.' });
+    }
+
+    console.log(`[PASSWORD RESET SUCCESS] Reset password for user: ${emailStr}`);
+    res.json({ message: 'Password reset successfully.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ message: 'Error resetting password.' });
   }
 });
 

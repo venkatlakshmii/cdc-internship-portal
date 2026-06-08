@@ -11,6 +11,7 @@ const MessageSchema = new mongoose.Schema({
   content: { type: String, required: true },
   attachmentPath: { type: String },
   attachmentName: { type: String },
+  attachmentPublicId: { type: String },
   isRead: { type: Boolean, default: false },
   isImportant: { type: Boolean, default: false },
   type: { type: String, enum: ['direct', 'announcement'], default: 'direct' },

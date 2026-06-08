@@ -38,6 +38,11 @@ const InternshipSchema = new mongoose.Schema({
     joiningLetter: { type: String }, // path
     internshipProof: [{ type: String }], // paths
   },
+  cloudinaryPublicIds: {
+    offerLetter: { type: String },
+    joiningLetter: { type: String },
+    internshipProof: [{ type: String }],
+  },
   criticalSubject: { type: String },
   spfBand: { type: String, enum: ['A', 'B', 'C', 'D', null], default: null },
   cdcBand: { type: String, enum: ['A', 'B', 'C', 'D', null], default: null },
@@ -53,10 +58,22 @@ const InternshipSchema = new mongoose.Schema({
     enum: ['Pending Principal Approval', 'Approved', 'Rejected', 'Request Changes', 'Put On Hold'], 
     default: 'Pending Principal Approval' 
   },
+  status: {
+    type: String,
+    default: 'SUBMITTED'
+  },
   remarks: { type: String },
-  cdcRecommendation: { type: String, enum: ['Approved', 'Rejected', 'Needs Clarification', 'Pending'], default: 'Pending' },
+  cdcRecommendation: {
+    status: { type: String, default: 'PENDING' },
+    remarks: { type: String, default: '' },
+    reviewedAt: { type: Date }
+  },
   cdcRemarks: { type: String, default: '' },
-  principalDecision: { type: String, enum: ['Approved', 'Rejected', 'Request Changes', 'Put On Hold', 'Pending'], default: 'Pending' },
+  principalDecision: {
+    status: { type: String, default: 'PENDING' },
+    remarks: { type: String, default: '' },
+    reviewedAt: { type: Date }
+  },
   principalRemarks: { type: String, default: '' },
   timeline: [{
     status: { type: String },
@@ -67,6 +84,23 @@ const InternshipSchema = new mongoose.Schema({
   }],
   hasAcademicConflict: { type: Boolean, default: false },
   conflictDetails: { type: String, default: '' },
+  currentStatus: { type: String },
+  rollNumber: { type: String, required: true },
+  studentEmail: { type: String, required: true },
+  cdcStatus: { type: String, enum: ['Pending', 'Approved', 'Rejected', 'Needs Clarification'], default: 'Pending' },
+  principalStatus: { type: String, enum: ['Pending Review', 'Approved', 'Rejected'], default: 'Pending Review' },
 }, { timestamps: true });
+
+InternshipSchema.index({ studentId: 1 });
+InternshipSchema.index({ rollNumber: 1 });
+InternshipSchema.index({ studentEmail: 1 });
+InternshipSchema.index({ cdcStatus: 1 });
+InternshipSchema.index({ principalStatus: 1 });
+InternshipSchema.index({ eligibilityStatus: 1 });
+InternshipSchema.index({ finalStatus: 1 });
+InternshipSchema.index({ 'studentDetails.branch': 1 });
+InternshipSchema.index({ createdAt: -1 });
+InternshipSchema.index({ status: 1 });
+InternshipSchema.index({ 'cdcRecommendation.status': 1, 'principalDecision.status': 1 });
 
 export const Internship = mongoose.model('Internship', InternshipSchema);

@@ -65,7 +65,15 @@ interface ThreadGroup {
 }
 
 export default function CommunicationCenter() {
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
+  let user: any = null;
+  try {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser && storedUser !== 'undefined') {
+      user = JSON.parse(storedUser);
+    }
+  } catch (e) {
+    console.error('Failed to parse user in CommunicationCenter', e);
+  }
   
   // UI Tabs & Filters State
   const [activeTab, setActiveTab] = useState<'inbox' | 'sent' | 'announcements'>('inbox');

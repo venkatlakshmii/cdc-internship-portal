@@ -10,7 +10,15 @@ import {
 
 export default function InternshipCompletion() {
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  let user: any = {};
+  try {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser && storedUser !== 'undefined') {
+      user = JSON.parse(storedUser);
+    }
+  } catch (e) {
+    console.error('Failed to parse user in InternshipCompletion', e);
+  }
   const role = user.role;
 
   const [loading, setLoading] = useState(false);

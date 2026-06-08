@@ -9,6 +9,7 @@ import {
 export default function PrincipalDashboard() {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [finalStatus, setFinalStatus] = useState('Approved');
   const [remarks, setRemarks] = useState('');
@@ -22,6 +23,14 @@ export default function PrincipalDashboard() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [search]);
 
   const handleExport = async (format: 'pdf' | 'excel') => {
     try {
@@ -38,7 +47,8 @@ export default function PrincipalDashboard() {
           status: statusFilter,
           type: typeFilter,
           startDate: startDate,
-          endDate: endDate
+          endDate: endDate,
+          search: search
         },
         responseType: 'blob'
       });
@@ -74,17 +84,28 @@ export default function PrincipalDashboard() {
 
   useEffect(() => {
     fetchApplications();
-  }, []);
+  }, [debouncedSearch, statusFilter, branchFilter, yearFilter, typeFilter, startDate, endDate]);
 
   const fetchApplications = async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get('/api/internships/forwarded', {
         headers: { Authorization: `Bearer ${token}` },
+        params: {
+          search: debouncedSearch,
+          status: statusFilter,
+          branch: branchFilter,
+          year: yearFilter,
+          type: typeFilter,
+          startDate,
+          endDate
+        }
       });
       setApplications(response.data);
-    } catch (err) {
+      setError(null);
+    } catch (err: any) {
       console.error('Error fetching applications:', err);
+      setError(err.response?.data?.message || err.message || 'Failed to load applications.');
     } finally {
       setLoading(false);
     }
@@ -153,6 +174,16 @@ export default function PrincipalDashboard() {
           <ShieldCheck size={20} />
         </div>
       </div>
+
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200/80 rounded-2xl flex items-start gap-3 text-red-800 text-xs font-semibold shadow-sm">
+          <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold text-red-900">Error Loading Applications</p>
+            <p className="mt-0.5 leading-relaxed">{error}</p>
+          </div>
+        </div>
+      )}
 
       {/* Filters Bar */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
@@ -300,11 +331,11 @@ export default function PrincipalDashboard() {
 
       <div className="grid gap-6">
         {filteredApps.length === 0 ? (
-          <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center">
+          <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center shadow-sm">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
               <CheckCircle size={32} />
             </div>
-            <h3 className="text-slate-900 font-bold text-lg">No pending approvals</h3>
+            <h3 className="text-slate-900 font-bold text-lg">No applications available</h3>
             <p className="text-slate-500 text-sm mt-1">All forwarded applications have been processed or match your active filters.</p>
           </div>
         ) : (

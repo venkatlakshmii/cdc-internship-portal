@@ -1,5 +1,5 @@
 import express from 'express';
-import multer from 'multer';
+import { uploadCloud } from '../middleware/uploadCloud.ts';
 import path from 'path';
 import fs from 'fs';
 import mongoose from 'mongoose';
@@ -48,9 +48,6 @@ async function detectConflict(fromDateStr: any, toDateStr: any) {
   return { hasConflict: false, details: '' };
 }
 
-// In-memory storage for fallback mode
-export let memoryInternships: any[] = [];
-
 async function createSystemNotification(studentId: string, subject: string, content: string, senderRole = 'system') {
   const alertMsg = {
     senderId: 'system-alert',
@@ -69,58 +66,133 @@ async function createSystemNotification(studentId: string, subject: string, cont
     updatedAt: new Date()
   };
 
-  if (mongoose.connection.readyState === 1) {
-    try {
-      const student = await mongoose.model('User').findById(studentId);
-      if (student) {
-        alertMsg.recipientName = student.name;
-      }
-      const newAlert = new (mongoose.model('Message'))(alertMsg);
-      await newAlert.save();
-      console.log(`[NOTIFICATION SUCCESS] Sent DB notification to student: ${studentId}`);
-    } catch (err) {
-      console.error('Failed to save notification to DB:', err);
+  try {
+    const student = await mongoose.model('User').findById(studentId);
+    if (student) {
+      alertMsg.recipientName = student.name;
     }
-  } else {
-    try {
-      const { memoryMessages } = await import('./messages.ts');
-      memoryMessages.push(alertMsg);
-      console.log(`[NOTIFICATION SUCCESS] Sent memory notification to student: ${studentId}`);
-    } catch (err) {
-      console.error('Failed to save notification to memory:', err);
-    }
+    const newAlert = new (mongoose.model('Message'))(alertMsg);
+    await newAlert.save();
+    console.log(`[NOTIFICATION SUCCESS] Sent DB notification to student: ${studentId}`);
+  } catch (err) {
+    console.error('Failed to save notification to DB:', err);
   }
 }
 
-// Multer setup
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = './uploads';
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  },
-});
+function formatInternshipForFrontend(app: any) {
+  if (!app) return app;
+  const appObj = typeof app.toObject === 'function' ? app.toObject() : { ...app };
+  
+  // Format cdcRecommendation
+  let cdcStatus = 'PENDING';
+  let cdcRemarksVal = appObj.cdcRemarks || '';
+  let cdcReviewedAtVal = appObj.updatedAt || new Date();
+  
+  if (typeof appObj.cdcRecommendation === 'string') {
+    cdcStatus = appObj.cdcRecommendation.toUpperCase();
+  } else if (appObj.cdcRecommendation && typeof appObj.cdcRecommendation === 'object') {
+    cdcStatus = (appObj.cdcRecommendation.status || 'PENDING').toUpperCase();
+    cdcRemarksVal = appObj.cdcRecommendation.remarks || cdcRemarksVal;
+    cdcReviewedAtVal = appObj.cdcRecommendation.reviewedAt || cdcReviewedAtVal;
+  }
+  
+  if (cdcStatus === 'APPROVED' || cdcStatus === 'APPROVED_BY_CDC' || appObj.currentStatus === 'CDC_APPROVED' || appObj.status === 'cdc_approved') {
+    appObj.cdcRecommendation = 'Approved';
+  } else if (cdcStatus === 'REJECTED') {
+    appObj.cdcRecommendation = 'Rejected';
+  } else if (cdcStatus === 'CLARIFICATION_REQUIRED' || cdcStatus === 'NEEDS CLARIFICATION' || cdcStatus === 'NEEDS_CLARIFICATION') {
+    appObj.cdcRecommendation = 'Needs Clarification';
+  } else {
+    appObj.cdcRecommendation = 'Pending';
+  }
 
-const upload = multer({
-  storage,
-  fileFilter: (req, file, cb) => {
-    const filetypes = /pdf|jpg|jpeg|png/;
-    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = filetypes.test(file.mimetype);
-    if (extname && mimetype) return cb(null, true);
-    cb(new Error('Only PDF, JPG, and PNG files are allowed!'));
-  },
-});
+  // Format principalDecision
+  let principalStatus = 'PENDING';
+  let principalRemarksVal = appObj.principalRemarks || '';
+  let principalReviewedAtVal = appObj.updatedAt || new Date();
+  
+  if (typeof appObj.principalDecision === 'string') {
+    principalStatus = appObj.principalDecision.toUpperCase();
+  } else if (appObj.principalDecision && typeof appObj.principalDecision === 'object') {
+    principalStatus = (appObj.principalDecision.status || 'PENDING').toUpperCase();
+    principalRemarksVal = appObj.principalDecision.remarks || principalRemarksVal;
+    principalReviewedAtVal = appObj.principalDecision.reviewedAt || principalReviewedAtVal;
+  }
+
+  if (principalStatus === 'APPROVED') {
+    appObj.principalDecision = 'Approved';
+  } else if (principalStatus === 'REJECTED') {
+    appObj.principalDecision = 'Rejected';
+  } else {
+    appObj.principalDecision = 'Pending';
+  }
+
+  // Dynamically generate timeline
+  const studentEntries = (appObj.timeline || []).filter((t: any) => t.role === 'student');
+  if (studentEntries.length === 0) {
+    studentEntries.push({
+      status: 'Submitted by Student',
+      updatedBy: appObj.studentDetails?.name || 'Student',
+      role: 'student',
+      remarks: 'Application submitted successfully',
+      timestamp: appObj.createdAt || new Date()
+    });
+  }
+
+  if (cdcStatus !== 'PENDING') {
+    let cdcStatusText = '';
+    if (cdcStatus === 'APPROVED' || cdcStatus === 'APPROVED_BY_CDC' || appObj.currentStatus === 'CDC_APPROVED' || appObj.status === 'cdc_approved') {
+      cdcStatusText = 'CDC Approved Application';
+    } else if (cdcStatus === 'REJECTED') {
+      cdcStatusText = 'CDC Rejected Application';
+    } else if (cdcStatus === 'CLARIFICATION_REQUIRED' || cdcStatus === 'NEEDS CLARIFICATION' || cdcStatus === 'NEEDS_CLARIFICATION') {
+      cdcStatusText = 'Clarification Requested by CDC';
+    }
+    
+    if (cdcStatusText) {
+      studentEntries.push({
+        status: cdcStatusText,
+        updatedBy: 'CDC Faculty',
+        role: 'cdc',
+        remarks: cdcRemarksVal,
+        timestamp: cdcReviewedAtVal
+      });
+    }
+  }
+
+  if (principalStatus !== 'PENDING') {
+    let principalStatusText = '';
+    if (principalStatus === 'APPROVED') {
+      principalStatusText = 'Final Decision by Principal: Approved';
+    } else if (principalStatus === 'REJECTED') {
+      principalStatusText = 'Final Decision by Principal: Rejected';
+    }
+    
+    if (principalStatusText) {
+      studentEntries.push({
+        status: principalStatusText,
+        updatedBy: 'Principal',
+        role: 'principal',
+        remarks: principalRemarksVal,
+        timestamp: principalReviewedAtVal
+      });
+    }
+  }
+
+  appObj.timeline = studentEntries;
+
+  return appObj;
+}
+
+// Multer setup replaced with Cloudinary storage
+const upload = uploadCloud;
 
 // Student: Submit Application
 router.post('/submit', authenticate, authorize(['student']), upload.fields([
   { name: 'offerLetter', maxCount: 1 },
   { name: 'joiningLetter', maxCount: 1 },
   { name: 'internshipProof', maxCount: 5 },
-]), async (req: AuthRequest, res) => {
+]), async (req: AuthRequest, res, next) => {
   try {
     const statusInfo = await getModuleStatusInfo();
     if (statusInfo.modules.applications !== 'active') {
@@ -129,11 +201,29 @@ router.post('/submit', authenticate, authorize(['student']), upload.fields([
       });
     }
 
-    const files = req.files as any;
-    const body = JSON.parse(req.body.data);
+    let body = req.body;
+    if (req.body && typeof req.body.data === 'string') {
+      try {
+        body = JSON.parse(req.body.data);
+      } catch (err) {
+        return res.status(400).json({ message: 'Invalid JSON format in request body.' });
+      }
+    }
 
-    const attendance = Number(body.studentDetails.attendancePercentage);
-    const proposedDuration = Number(body.internshipDetails.totalDuration);
+    if (!body || !body.studentDetails || !body.internshipDetails) {
+      return res.status(400).json({ message: 'Missing required student or internship details.' });
+    }
+
+    if (!body.internshipDetails.fromDate || isNaN(new Date(body.internshipDetails.fromDate).getTime())) {
+      return res.status(400).json({ message: 'From Date is required and must be a valid date.' });
+    }
+    if (!body.internshipDetails.toDate || isNaN(new Date(body.internshipDetails.toDate).getTime())) {
+      return res.status(400).json({ message: 'To Date is required and must be a valid date.' });
+    }
+
+    const files = req.files as any;
+    const attendance = Number(body.studentDetails.attendancePercentage || 0);
+    const proposedDuration = Number(body.internshipDetails.totalDuration || 0);
 
     if (proposedDuration > 6) {
       return res.status(400).json({ message: 'Internships with a duration of more than 6 months are not accepted.' });
@@ -198,17 +288,28 @@ router.post('/submit', authenticate, authorize(['student']), upload.fields([
     const internshipData = {
       _id: new mongoose.Types.ObjectId().toString(),
       studentId: req.user?.id,
+      rollNumber: body.studentDetails.rollNumber,
+      studentEmail: req.user?.email || body.studentDetails.personalEmail,
+      cdcStatus: 'Pending',
+      principalStatus: 'Pending Review',
       ...body,
+      status: 'SUBMITTED',
+      currentStatus: 'SUBMITTED',
       proposedDuration: proposedDuration,
       attachments: {
-        offerLetter: files.offerLetter?.[0]?.path,
-        joiningLetter: files.joiningLetter?.[0]?.path,
-        internshipProof: files.internshipProof?.map((f: any) => f.path) || [],
+        offerLetter: files?.offerLetter?.[0]?.path,
+        joiningLetter: files?.joiningLetter?.[0]?.path,
+        internshipProof: files?.internshipProof?.map((f: any) => f.path) || [],
+      },
+      cloudinaryPublicIds: {
+        offerLetter: files?.offerLetter?.[0]?.filename,
+        joiningLetter: files?.joiningLetter?.[0]?.filename,
+        internshipProof: files?.internshipProof?.map((f: any) => f.filename) || [],
       },
       eligibilityStatus,
       finalStatus: 'Pending Principal Approval',
-      cdcRecommendation: 'Pending',
-      principalDecision: 'Pending',
+      cdcRecommendation: { status: 'PENDING', remarks: '' },
+      principalDecision: { status: 'PENDING', remarks: '' },
       timeline: [{
         status: 'Submitted by Student',
         updatedBy: body.studentDetails?.name || 'Student',
@@ -225,17 +326,9 @@ router.post('/submit', authenticate, authorize(['student']), upload.fields([
     // Auto notify Student, CDC and Principal about conflict
     if (conflict.hasConflict) {
       try {
-        let cdcUsers: any[] = [];
-        let principalUsers: any[] = [];
+        let cdcUsers = await User.find({ role: 'cdc' });
+        let principalUsers = await User.find({ role: 'principal' });
         let studentName = body.studentDetails.name || 'Student';
-
-        if (mongoose.connection.readyState === 1) {
-          cdcUsers = await User.find({ role: 'cdc' });
-          principalUsers = await User.find({ role: 'principal' });
-        } else {
-          cdcUsers = [{ _id: 'cdc-fallback-id', name: 'CDC Faculty' }];
-          principalUsers = [{ _id: 'principal-fallback-id', name: 'Principal' }];
-        }
 
         const alertMsg = {
           senderId: 'system-alert',
@@ -254,112 +347,62 @@ router.post('/submit', authenticate, authorize(['student']), upload.fields([
           updatedAt: new Date()
         };
 
-        if (mongoose.connection.readyState === 1) {
-          const { Message } = await import('../models/Message.ts');
-          const newAlert = new Message(alertMsg);
-          await newAlert.save();
-          
-          for (const cdc of cdcUsers) {
-            await new Message({
-              ...alertMsg,
-              recipientId: cdc._id,
-              recipientName: cdc.name,
-              recipientRole: 'cdc'
-            }).save();
-          }
-          for (const principal of principalUsers) {
-            await new Message({
-              ...alertMsg,
-              recipientId: principal._id,
-              recipientName: principal.name,
-              recipientRole: 'principal'
-            }).save();
-          }
-        } else {
-          const { memoryMessages } = await import('./messages.ts');
-          memoryMessages.push(alertMsg);
-          cdcUsers.forEach(cdc => {
-            memoryMessages.push({
-              ...alertMsg,
-              recipientId: cdc._id || cdc.id,
-              recipientName: cdc.name,
-              recipientRole: 'cdc'
-            });
-          });
-          principalUsers.forEach(p => {
-            memoryMessages.push({
-              ...alertMsg,
-              recipientId: p._id || p.id,
-              recipientName: p.name,
-              recipientRole: 'principal'
-            });
-          });
+        const { Message } = await import('../models/Message.ts');
+        const newAlert = new Message(alertMsg);
+        await newAlert.save();
+        
+        for (const cdc of cdcUsers) {
+          await new Message({
+            ...alertMsg,
+            recipientId: cdc._id,
+            recipientName: cdc.name,
+            recipientRole: 'cdc'
+          }).save();
+        }
+        for (const principal of principalUsers) {
+          await new Message({
+            ...alertMsg,
+            recipientId: principal._id,
+            recipientName: principal.name,
+            recipientRole: 'principal'
+          }).save();
         }
       } catch (msgError) {
         console.error('Error generating academic conflict system notification:', msgError);
       }
     }
 
-    if (mongoose.connection.readyState !== 1) {
-      memoryInternships.push(internshipData);
-      return res.status(201).json({ message: 'Application submitted successfully (Fallback Mode)', internship: internshipData });
-    }
-
     const internship = new Internship(internshipData);
     await internship.save();
-    res.status(201).json({ message: 'Application submitted successfully', internship });
+    console.log("Application Status:", internship.status);
+    res.status(201).json({ message: 'Application submitted successfully', internship: formatInternshipForFrontend(internship) });
   } catch (error: any) {
-    console.error('Submission Error:', error);
-    res.status(500).json({ 
-      message: 'Error submitting application', 
-      error: error.message,
-      details: error.errors 
-    });
+    next(error);
   }
 });
 
 // Student: View Own Applications
-router.get('/my-applications', authenticate, authorize(['student']), async (req: AuthRequest, res) => {
+router.get('/my-applications', authenticate, authorize(['student']), async (req: AuthRequest, res, next) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      const list = memoryInternships.filter(i => i.studentId === req.user?.id);
-      const populatedList = await Promise.all(list.map(async (app) => {
-        const conflict = await detectConflict(app.internshipDetails.fromDate, app.internshipDetails.toDate);
-        return {
-          ...app,
-          hasAcademicConflict: conflict.hasConflict || app.hasAcademicConflict,
-          conflictDetails: conflict.details || app.conflictDetails
-        };
-      }));
-      return res.json(populatedList);
-    }
     const applications = await Internship.find({ studentId: req.user?.id });
     const populatedApps = await Promise.all(applications.map(async (app) => {
+      console.log("Application Status:", app.status || 'pending');
       const conflict = await detectConflict(app.internshipDetails.fromDate, app.internshipDetails.toDate);
       const appObj = app.toObject();
       appObj.hasAcademicConflict = conflict.hasConflict || app.hasAcademicConflict;
       appObj.conflictDetails = conflict.details || app.conflictDetails;
-      return appObj;
+      return formatInternshipForFrontend(appObj);
     }));
     res.json(populatedApps);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching applications' });
+    next(error);
   }
 });
 
 // Student/CDC/Principal: View Single Application Detail
-router.get('/detail/:id', authenticate, async (req: AuthRequest, res) => {
+router.get('/detail/:id', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
-    if (mongoose.connection.readyState !== 1) {
-      const internship = memoryInternships.find(i => i._id === id);
-      if (!internship) return res.status(404).json({ message: 'Internship not found' });
-      if (req.user?.role === 'student' && internship.studentId !== req.user.id) {
-        return res.status(403).json({ message: 'Forbidden' });
-      }
-      return res.json(internship);
-    }
-    
     const internship = await Internship.findById(id).populate('studentId', 'name email');
     if (!internship) return res.status(404).json({ message: 'Internship not found' });
     
@@ -368,17 +411,12 @@ router.get('/detail/:id', authenticate, async (req: AuthRequest, res) => {
       ? studentIdVal._id.toString()
       : (studentIdVal ? studentIdVal.toString() : '');
     
-    console.log('[DEBUG] req.user.id:', req.user?.id);
-    console.log('[DEBUG] studentIdVal:', studentIdVal);
-    console.log('[DEBUG] ownerId:', ownerId);
-    
     if (req.user?.role === 'student' && ownerId !== req.user.id) {
       return res.status(403).json({ message: 'Forbidden' });
     }
-    res.json(internship);
+    res.json(formatInternshipForFrontend(internship));
   } catch (error) {
-    console.error('Error fetching internship details:', error);
-    res.status(500).json({ message: 'Error fetching internship details' });
+    next(error);
   }
 });
 
@@ -387,31 +425,43 @@ router.put('/update/:id', authenticate, authorize(['student']), upload.fields([
   { name: 'offerLetter', maxCount: 1 },
   { name: 'joiningLetter', maxCount: 1 },
   { name: 'internshipProof', maxCount: 5 }
-]), async (req: AuthRequest, res) => {
+]), async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
-    const files = req.files as any;
-    const body = JSON.parse(req.body.data);
-
-    let existingApp: any = null;
-
-    if (mongoose.connection.readyState !== 1) {
-      existingApp = memoryInternships.find(i => i._id === id);
-    } else {
-      existingApp = await Internship.findById(id);
+    let body = req.body;
+    if (req.body && typeof req.body.data === 'string') {
+      try {
+        body = JSON.parse(req.body.data);
+      } catch (err) {
+        return res.status(400).json({ message: 'Invalid JSON format in request body.' });
+      }
     }
+
+    if (!body || !body.studentDetails || !body.internshipDetails) {
+      return res.status(400).json({ message: 'Missing required student or internship details.' });
+    }
+
+    if (!body.internshipDetails.fromDate || isNaN(new Date(body.internshipDetails.fromDate).getTime())) {
+      return res.status(400).json({ message: 'From Date is required and must be a valid date.' });
+    }
+    if (!body.internshipDetails.toDate || isNaN(new Date(body.internshipDetails.toDate).getTime())) {
+      return res.status(400).json({ message: 'To Date is required and must be a valid date.' });
+    }
+
+    const existingApp = await Internship.findById(id);
 
     if (!existingApp) {
       return res.status(404).json({ message: 'Internship application not found' });
     }
 
-    const ownerId = mongoose.connection.readyState !== 1 ? existingApp.studentId : existingApp.studentId.toString();
+    const ownerId = existingApp.studentId.toString();
     if (ownerId !== req.user?.id) {
       return res.status(403).json({ message: 'Forbidden: You do not own this application' });
     }
 
-    const attendance = Number(body.studentDetails.attendancePercentage);
-    const yearSem = body.studentDetails.year;
+    const files = req.files as any;
+    const attendance = Number(body.studentDetails.attendancePercentage || 0);
+    const yearSem = body.studentDetails.year || '';
     const is2ndYear = yearSem.includes('2nd Year');
     const is3rdYear1stSem = yearSem === '3rd Year – 1st Sem';
     const is3rdYear2ndSem = yearSem === '3rd Year – 2nd Sem';
@@ -429,7 +479,7 @@ router.put('/update/:id', authenticate, authorize(['student']), upload.fields([
 
     const fromDate = new Date(body.internshipDetails.fromDate);
     const toDate = new Date(body.internshipDetails.toDate);
-    const proposedDuration = Number(body.internshipDetails.totalDuration);
+    const proposedDuration = Number(body.internshipDetails.totalDuration || 0);
 
     if (!isNaN(fromDate.getTime()) && !isNaN(toDate.getTime())) {
       const diffTime = Math.abs(toDate.getTime() - fromDate.getTime());
@@ -446,9 +496,13 @@ router.put('/update/:id', authenticate, authorize(['student']), upload.fields([
       }
     }
 
-    const offerLetterPath = files.offerLetter?.[0]?.path || existingApp.attachments?.offerLetter;
-    const joiningLetterPath = files.joiningLetter?.[0]?.path || existingApp.attachments?.joiningLetter;
-    const internshipProofPaths = files.internshipProof?.map((f: any) => f.path) || existingApp.attachments?.internshipProof || [];
+    const offerLetterPath = files?.offerLetter?.[0]?.path || existingApp.attachments?.offerLetter;
+    const joiningLetterPath = files?.joiningLetter?.[0]?.path || existingApp.attachments?.joiningLetter;
+    const internshipProofPaths = files?.internshipProof?.map((f: any) => f.path) || existingApp.attachments?.internshipProof || [];
+
+    const offerLetterPublicId = files?.offerLetter?.[0]?.filename || existingApp.cloudinaryPublicIds?.offerLetter;
+    const joiningLetterPublicId = files?.joiningLetter?.[0]?.filename || existingApp.cloudinaryPublicIds?.joiningLetter;
+    const internshipProofPublicIds = files?.internshipProof?.map((f: any) => f.filename) || existingApp.cloudinaryPublicIds?.internshipProof || [];
 
     const updatedTimeline = existingApp.timeline || [];
     updatedTimeline.push({
@@ -460,140 +514,120 @@ router.put('/update/:id', authenticate, authorize(['student']), upload.fields([
     });
 
     const updatedData = {
-      ...existingApp.toObject ? existingApp.toObject() : existingApp,
+      ...existingApp.toObject(),
       ...body,
+      status: 'SUBMITTED',
+      currentStatus: 'SUBMITTED',
       proposedDuration,
       attachments: {
         offerLetter: offerLetterPath,
         joiningLetter: joiningLetterPath,
         internshipProof: internshipProofPaths
       },
+      cloudinaryPublicIds: {
+        offerLetter: offerLetterPublicId,
+        joiningLetter: joiningLetterPublicId,
+        internshipProof: internshipProofPublicIds
+      },
+      rollNumber: body.studentDetails.rollNumber,
+      studentEmail: req.user?.email || body.studentDetails.personalEmail,
       eligibilityStatus: 'Pending CDC Review',
-      cdcRecommendation: 'Pending',
-      principalDecision: 'Pending',
+      cdcRecommendation: { status: 'PENDING', remarks: '' },
+      principalDecision: { status: 'PENDING', remarks: '' },
       finalStatus: 'Pending Principal Approval',
+      cdcStatus: 'Pending',
+      principalStatus: 'Pending Review',
       timeline: updatedTimeline,
       updatedAt: new Date()
     };
 
-    if (mongoose.connection.readyState !== 1) {
-      const index = memoryInternships.findIndex(i => i._id === id);
-      memoryInternships[index] = updatedData;
-      return res.json({ message: 'Application updated successfully (Fallback Mode)', internship: updatedData });
-    }
-
     await Internship.findByIdAndUpdate(id, updatedData);
     const updatedInternship = await Internship.findById(id);
 
-    res.json({ message: 'Application updated successfully', internship: updatedInternship });
+    console.log("Application Status:", updatedInternship?.status);
+    res.json({ message: 'Application updated successfully', internship: formatInternshipForFrontend(updatedInternship) });
   } catch (error: any) {
-    console.error('Update Error:', error);
-    res.status(500).json({ message: 'Error updating application', error: error.message });
+    next(error);
   }
 });
 
 // CDC: View All Applications
-router.get('/all', authenticate, authorize(['cdc']), async (req, res) => {
+router.get('/all', authenticate, authorize(['cdc']), async (req, res, next) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      const list = memoryInternships;
-      const populatedList = await Promise.all(list.map(async (app) => {
-        const conflict = await detectConflict(app.internshipDetails.fromDate, app.internshipDetails.toDate);
-        return {
-          ...app,
-          hasAcademicConflict: conflict.hasConflict || app.hasAcademicConflict,
-          conflictDetails: conflict.details || app.conflictDetails
-        };
-      }));
-      return res.json(populatedList);
+    const { search, status, branch, year, type, startDate, endDate } = req.query;
+    
+    // Build query object
+    const query: any = {};
+    
+    if (branch && branch !== 'all') {
+      query['studentDetails.branch'] = branch;
     }
-    const applications = await Internship.find().populate('studentId', 'name email');
-    const populatedApps = await Promise.all(applications.map(async (app) => {
+    if (year && year !== 'all') {
+      query['studentDetails.year'] = new RegExp(String(year), 'i');
+    }
+    if (type && type !== 'all') {
+      query['internshipDetails.mode'] = type;
+    }
+    
+    if (startDate || endDate) {
+      query['internshipDetails.fromDate'] = {};
+      if (startDate) {
+        query['internshipDetails.fromDate'].$gte = new Date(String(startDate));
+      }
+      if (endDate) {
+        query['internshipDetails.fromDate'].$lte = new Date(String(endDate));
+      }
+    }
+    
+    if (status && status !== 'all') {
+      const statusStr = String(status).toLowerCase();
+      if (statusStr === 'pending') {
+        query.eligibilityStatus = 'Pending CDC Review';
+      } else if (statusStr === 'approved') {
+        query.eligibilityStatus = { $in: ['Approved', '3 Months Approved', 'Conditionally Approved', '3 Months + 3 Months Extension'] };
+      } else if (statusStr === 'not eligible') {
+        query.eligibilityStatus = 'Not Eligible';
+      } else {
+        query.eligibilityStatus = new RegExp(statusStr, 'i');
+      }
+    }
+    
+    if (search) {
+      const q = String(search).toLowerCase().trim();
+      const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+      const cleanSearch = rollMatch ? rollMatch[1] : q;
+      query.$or = [
+        { 'studentDetails.name': new RegExp(cleanSearch, 'i') },
+        { 'studentDetails.rollNumber': new RegExp(cleanSearch, 'i') },
+        { rollNumber: new RegExp(cleanSearch, 'i') },
+        { studentEmail: new RegExp(cleanSearch, 'i') }
+      ];
+    }
+    
+    const applications = await Internship.find(query)
+      .populate('studentId', 'name email')
+      .lean();
+      
+    const populatedApps = await Promise.all(applications.map(async (app: any) => {
+      console.log("Application Status:", app.status || 'pending');
       const conflict = await detectConflict(app.internshipDetails.fromDate, app.internshipDetails.toDate);
-      const appObj = app.toObject();
-      appObj.hasAcademicConflict = conflict.hasConflict || app.hasAcademicConflict;
-      appObj.conflictDetails = conflict.details || app.conflictDetails;
-      return appObj;
+      app.hasAcademicConflict = conflict.hasConflict || app.hasAcademicConflict;
+      app.conflictDetails = conflict.details || app.conflictDetails;
+      return formatInternshipForFrontend(app);
     }));
+    
     res.json(populatedApps);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching applications' });
+    next(error);
   }
 });
 
 // CDC: Update Bands and Eligibility
-router.patch('/cdc-review/:id', authenticate, authorize(['cdc']), async (req: AuthRequest, res) => {
+router.patch('/cdc-review/:id', authenticate, authorize(['cdc']), async (req: AuthRequest, res, next) => {
   try {
     const { spfBand, cdcBand, cdcRecommendation, cdcRemarks, action } = req.body;
     const rec = cdcRecommendation || (action === 'reject' ? 'Rejected' : 'Approved');
     const rems = cdcRemarks || (action === 'reject' ? 'Rejected by CDC' : '');
-
-    if (mongoose.connection.readyState !== 1) {
-      const index = memoryInternships.findIndex(i => i._id === req.params.id);
-      if (index === -1) return res.status(404).json({ message: 'Internship not found' });
-      
-      const internship = memoryInternships[index];
-      let finalEligibility = 'Pending CDC Review';
-      let finalSpf = spfBand || 'A';
-      let finalCdc = cdcBand || 'A';
-      let permDuration = 0;
-
-      if (rec === 'Rejected') {
-        finalEligibility = 'Rejected by CDC – Pending Principal Review';
-      } else if (rec === 'Needs Clarification') {
-        finalEligibility = 'Clarification Required by CDC';
-      } else {
-        const result = calculateEligibility(
-          internship.studentDetails.attendancePercentage,
-          spfBand || 'A',
-          cdcBand || 'A',
-          internship.internshipDetails.totalDuration || 0
-        );
-        finalEligibility = result.eligibilityStatus;
-        permDuration = result.permissibleDuration || 0;
-      }
-
-      let timeline = internship.timeline || [];
-      if (rec === 'Approved' || rec === 'Rejected') {
-        timeline = timeline.filter((t: any) => !t.status.includes('Clarification'));
-      }
-      const statusStr = rec === 'Approved' ? 'Reviewed by CDC – Approved' :
-                        rec === 'Rejected' ? 'Reviewed by CDC – Rejected' :
-                        'Clarification Requested by CDC';
-      timeline.push({
-        status: statusStr,
-        updatedBy: req.user?.email || 'CDC Faculty',
-        role: 'cdc',
-        remarks: rems,
-        timestamp: new Date()
-      });
-
-      memoryInternships[index] = {
-        ...internship,
-        spfBand: finalSpf,
-        cdcBand: finalCdc,
-        permissibleDuration: permDuration,
-        eligibilityStatus: finalEligibility,
-        cdcRecommendation: rec,
-        cdcRemarks: rems,
-        timeline,
-        updatedAt: new Date()
-      };
-
-      const notificationContent = rec === 'Needs Clarification'
-        ? "CDC Department has requested clarification. Please meet the CDC office."
-        : `CDC Faculty has reviewed your internship application for ${internship.internshipDetails.companyName}. Recommendation: ${rec}. Remarks: "${rems || 'None'}"`;
-
-      // Send notification asynchronously
-      createSystemNotification(
-        internship.studentId,
-        'Internship CDC Review Notification',
-        notificationContent,
-        'cdc'
-      ).catch(console.error);
-
-      return res.json({ message: 'CDC review updated (Fallback Mode)', internship: memoryInternships[index] });
-    }
 
     const internship = await Internship.findById(req.params.id);
     if (!internship) return res.status(404).json({ message: 'Internship not found' });
@@ -622,32 +656,43 @@ router.patch('/cdc-review/:id', authenticate, authorize(['cdc']), async (req: Au
     internship.cdcBand = finalCdc;
     internship.permissibleDuration = permDuration;
     internship.eligibilityStatus = finalEligibility as any;
-    internship.cdcRecommendation = rec;
-    internship.cdcRemarks = rems;
     
-    const statusStr = rec === 'Approved' ? 'Reviewed by CDC – Approved' :
-                      rec === 'Rejected' ? 'Reviewed by CDC – Rejected' :
-                      'Clarification Requested by CDC';
-
-    let newTimeline = internship.timeline
-      .map((t: any) => (t.toObject ? t.toObject() : t));
-
-    if (rec === 'Approved' || rec === 'Rejected') {
-      newTimeline = newTimeline.filter((t: any) => !t.status.includes('Clarification'));
-    }
-
-    newTimeline.push({
-      status: statusStr,
-      updatedBy: req.user?.email || 'CDC Faculty',
-      role: 'cdc',
+    let dbCdcStatus = 'PENDING';
+    if (rec === 'Approved') dbCdcStatus = 'APPROVED';
+    else if (rec === 'Rejected') dbCdcStatus = 'REJECTED';
+    else if (rec === 'Needs Clarification') dbCdcStatus = 'CLARIFICATION_REQUIRED';
+    
+    internship.cdcRecommendation = {
+      status: dbCdcStatus,
       remarks: rems,
-      timestamp: new Date()
-    });
+      reviewedAt: new Date()
+    };
+    internship.cdcRemarks = rems;
 
-    internship.timeline = newTimeline as any;
+    // Map recommendation to cdcStatus enum
+    let cdcStatusVal = 'Pending';
+    if (rec === 'Approved') {
+      cdcStatusVal = 'Approved';
+      internship.status = 'cdc_approved';
+      internship.currentStatus = 'CDC_APPROVED';
+      internship.principalDecision = { status: 'PENDING', remarks: '' };
+    } else if (rec === 'Rejected') {
+      cdcStatusVal = 'Rejected';
+      internship.status = 'cdc_rejected';
+      internship.currentStatus = 'CDC_REJECTED';
+    } else if (rec === 'Needs Clarification') {
+      cdcStatusVal = 'Needs Clarification';
+      internship.status = 'clarification';
+      internship.currentStatus = 'CLARIFICATION_REQUIRED';
+    }
+    internship.cdcStatus = cdcStatusVal as any;
+    
+    // Clear non-student entries to keep DB timeline clean
+    internship.timeline = internship.timeline.filter((t: any) => t.role === 'student') as any;
     internship.markModified('timeline');
 
     await internship.save();
+    console.log("Application Status:", internship.status);
 
     const notificationContent = rec === 'Needs Clarification'
       ? "CDC Department has requested clarification. Please meet the CDC office."
@@ -661,105 +706,130 @@ router.patch('/cdc-review/:id', authenticate, authorize(['cdc']), async (req: Au
       'cdc'
     ).catch(console.error);
 
-    res.json({ message: 'CDC review updated', internship });
+    res.json({ message: 'CDC review updated', internship: formatInternshipForFrontend(internship) });
   } catch (error) {
-    console.error('Error updating review:', error);
-    res.status(500).json({ message: 'Error updating review' });
+    next(error);
   }
 });
 
 // Principal: View Forwarded Applications
-router.get('/forwarded', authenticate, authorize(['principal']), async (req, res) => {
+router.get('/forwarded', authenticate, authorize(['principal']), async (req, res, next) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      const list = memoryInternships.filter(i => 
-        i.cdcRecommendation !== 'Pending'
-      );
-      const populatedList = await Promise.all(list.map(async (app) => {
-        const conflict = await detectConflict(app.internshipDetails.fromDate, app.internshipDetails.toDate);
-        return {
-          ...app,
-          hasAcademicConflict: conflict.hasConflict || app.hasAcademicConflict,
-          conflictDetails: conflict.details || app.conflictDetails
-        };
-      }));
-      return res.json(populatedList);
+    const { search, branch, year, type, startDate, endDate } = req.query;
+    
+    // Build query object strictly matching cdcRecommendation.status = APPROVED/Approved or currentStatus = CDC_APPROVED
+    const query: any = {
+      $or: [
+        { 'cdcRecommendation.status': 'APPROVED' },
+        { 'cdcRecommendation.status': 'Approved' },
+        { cdcRecommendation: 'Approved' },
+        { cdcRecommendation: 'APPROVED' },
+        { currentStatus: 'CDC_APPROVED' },
+        { status: 'cdc_approved' }
+      ]
+    };
+    
+    if (branch && branch !== 'all') {
+      query['studentDetails.branch'] = branch;
     }
-    const applications = await Internship.find({ 
-      cdcRecommendation: { $ne: 'Pending' }
-    }).populate('studentId', 'name email');
-    const populatedApps = await Promise.all(applications.map(async (app) => {
+    if (year && year !== 'all') {
+      query['studentDetails.year'] = new RegExp(String(year), 'i');
+    }
+    if (type && type !== 'all') {
+      query['internshipDetails.mode'] = type;
+    }
+    
+    if (startDate || endDate) {
+      query['internshipDetails.fromDate'] = {};
+      if (startDate) {
+        query['internshipDetails.fromDate'].$gte = new Date(String(startDate));
+      }
+      if (endDate) {
+        query['internshipDetails.fromDate'].$lte = new Date(String(endDate));
+      }
+    }
+    
+    if (search) {
+      const q = String(search).toLowerCase().trim();
+      const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+      const cleanSearch = rollMatch ? rollMatch[1] : q;
+      query.$or = [
+        { 'studentDetails.name': new RegExp(cleanSearch, 'i') },
+        { 'studentDetails.rollNumber': new RegExp(cleanSearch, 'i') },
+        { rollNumber: new RegExp(cleanSearch, 'i') },
+        { studentEmail: new RegExp(cleanSearch, 'i') }
+      ];
+    }
+    
+    const page = req.query.page ? parseInt(req.query.page as string) : null;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : null;
+    
+    let applicationsQuery = Internship.find(query).populate('studentId', 'name email');
+    if (page && limit) {
+      const skip = (page - 1) * limit;
+      applicationsQuery = applicationsQuery.skip(skip).limit(limit);
+    }
+    
+    const applications = await applicationsQuery.lean();
+      
+    const populatedApps = await Promise.all(applications.map(async (app: any) => {
+      console.log("Application Status:", app.status || 'pending');
       const conflict = await detectConflict(app.internshipDetails.fromDate, app.internshipDetails.toDate);
-      const appObj = app.toObject();
-      appObj.hasAcademicConflict = conflict.hasConflict || app.hasAcademicConflict;
-      appObj.conflictDetails = conflict.details || app.conflictDetails;
-      return appObj;
+      app.hasAcademicConflict = conflict.hasConflict || app.hasAcademicConflict;
+      app.conflictDetails = conflict.details || app.conflictDetails;
+      return formatInternshipForFrontend(app);
     }));
+    
     res.json(populatedApps);
   } catch (error) {
-    res.status(500).json({ message: 'Error fetching applications' });
+    next(error);
   }
 });
 
 // Principal: Final Decision
-router.patch('/principal-decision/:id', authenticate, authorize(['principal']), async (req: AuthRequest, res) => {
+router.patch('/principal-decision/:id', authenticate, authorize(['principal']), async (req: AuthRequest, res, next) => {
   try {
     const { finalStatus, remarks } = req.body;
-
-    if (mongoose.connection.readyState !== 1) {
-      const index = memoryInternships.findIndex(i => i._id === req.params.id);
-      if (index === -1) return res.status(404).json({ message: 'Internship not found' });
-      
-      const internship = memoryInternships[index];
-      const timeline = internship.timeline || [];
-      timeline.push({
-        status: `Final Decision by Principal: ${finalStatus}`,
-        updatedBy: req.user?.email || 'Principal',
-        role: 'principal',
-        remarks: remarks || '',
-        timestamp: new Date()
-      });
-
-      memoryInternships[index] = {
-        ...internship,
-        finalStatus,
-        remarks,
-        principalDecision: finalStatus,
-        principalRemarks: remarks,
-        eligibilityStatus: finalStatus,
-        timeline,
-        updatedAt: new Date()
-      };
-
-      // Send notification asynchronously
-      createSystemNotification(
-        internship.studentId,
-        'Internship Final Decision Notification',
-        `Principal has made a final decision on your internship application for ${internship.internshipDetails.companyName}. Decision: ${finalStatus}. Remarks: "${remarks || 'None'}"`,
-        'principal'
-      ).catch(console.error);
-
-      return res.json({ message: 'Principal decision updated (Fallback Mode)', internship: memoryInternships[index] });
-    }
 
     const internship = await Internship.findById(req.params.id);
     if (!internship) return res.status(404).json({ message: 'Internship not found' });
 
+    let dbPrincipalStatus = 'PENDING';
+    if (finalStatus === 'Approved') dbPrincipalStatus = 'APPROVED';
+    else if (finalStatus === 'Rejected') dbPrincipalStatus = 'REJECTED';
+
     internship.finalStatus = finalStatus as any;
     internship.remarks = remarks;
-    internship.principalDecision = finalStatus as any;
+    internship.principalDecision = {
+      status: dbPrincipalStatus,
+      remarks: remarks || '',
+      reviewedAt: new Date()
+    };
     internship.principalRemarks = remarks;
     internship.eligibilityStatus = finalStatus as any;
+
+    // Map decision to principalStatus enum
+    let principalStatusVal = 'Pending Review';
+    if (finalStatus === 'Approved') {
+      principalStatusVal = 'Approved';
+      internship.status = 'principal_approved';
+      internship.currentStatus = 'APPROVED';
+    } else if (finalStatus === 'Rejected') {
+      principalStatusVal = 'Rejected';
+      internship.status = 'principal_rejected';
+      internship.currentStatus = 'REJECTED';
+    } else {
+      internship.status = 'principal_pending';
+      internship.currentStatus = 'PENDING';
+    }
+    internship.principalStatus = principalStatusVal as any;
     
-    internship.timeline.push({
-      status: `Final Decision by Principal: ${finalStatus}`,
-      updatedBy: req.user?.email || 'Principal',
-      role: 'principal',
-      remarks: remarks || '',
-      timestamp: new Date()
-    });
+    // Clear non-student entries to keep DB timeline clean
+    internship.timeline = internship.timeline.filter((t: any) => t.role === 'student') as any;
+    internship.markModified('timeline');
     
     await internship.save();
+    console.log("Application Status:", internship.status);
 
     // Send notification
     createSystemNotification(
@@ -769,10 +839,9 @@ router.patch('/principal-decision/:id', authenticate, authorize(['principal']), 
       'principal'
     ).catch(console.error);
 
-    res.json({ message: 'Principal decision updated', internship });
+    res.json({ message: 'Principal decision updated', internship: formatInternshipForFrontend(internship) });
   } catch (error) {
-    console.error('Error updating decision:', error);
-    res.status(500).json({ message: 'Error updating decision' });
+    next(error);
   }
 });
 

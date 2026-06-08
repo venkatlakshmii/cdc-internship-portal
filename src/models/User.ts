@@ -2,9 +2,9 @@ import mongoose from 'mongoose';
 
 const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true },
-  role: { type: String, enum: ['student', 'cdc', 'principal', 'hod', 'dean'], default: 'student' },
+  role: { type: String, enum: ['student', 'cdc', 'principal', 'dean', 'Student', 'CDC', 'Principal'], default: 'student' },
   rollNumber: { type: String },
   branch: { type: String },
   year: { type: String },
@@ -15,5 +15,8 @@ const UserSchema = new mongoose.Schema({
   personalEmail: { type: String },
   profileRegistered: { type: Boolean, default: false },
 }, { timestamps: true });
+
+UserSchema.index({ rollNumber: 1 });
+UserSchema.index({ role: 1 });
 
 export const User = mongoose.model('User', UserSchema);

@@ -5,9 +5,18 @@ import { motion } from 'motion/react';
 import { Clock, CheckCircle2, XCircle, AlertTriangle, FileText, ExternalLink, Lock } from 'lucide-react';
 
 export default function StudentDashboard() {
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  let user: any = {};
+  try {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser && storedUser !== 'undefined') {
+      user = JSON.parse(storedUser);
+    }
+  } catch (e) {
+    console.error('Failed to parse user in StudentDashboard', e);
+  }
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [studentYear, setStudentYear] = useState<string>('');
   const [portalStatus, setPortalStatus] = useState<any>({
     modules: { applications: 'active' },
@@ -46,8 +55,10 @@ export default function StudentDashboard() {
           headers: { Authorization: `Bearer ${token}` },
         });
         setApplications(response.data);
-      } catch (err) {
+        setError(null);
+      } catch (err: any) {
         console.error('Error fetching applications:', err);
+        setError(err.response?.data?.message || err.message || 'Failed to load applications.');
       } finally {
         setLoading(false);
       }
@@ -130,6 +141,16 @@ export default function StudentDashboard() {
         )}
       </div>
 
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200/80 rounded-2xl flex items-start gap-3 text-red-800 text-xs font-semibold shadow-sm">
+          <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold text-red-900">Error Loading Applications</p>
+            <p className="mt-0.5 leading-relaxed">{error}</p>
+          </div>
+        </div>
+      )}
+
       {portalStatus.modules?.applications !== 'active' && (
         <div className="p-4 bg-amber-50 border border-amber-200/80 rounded-2xl flex items-start gap-3 text-amber-800 text-xs font-semibold shadow-sm animate-pulse">
           <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
@@ -166,7 +187,7 @@ export default function StudentDashboard() {
         </div>
       )}
 
-      {applications.some(app => app.eligibilityStatus === 'Clarification Required by CDC') && (
+      {applications.some(app => app.eligibilityStatus === 'Clarification Required by CDC' && app.finalStatus === 'Pending Principal Approval') && (
         <div className="p-4 bg-amber-50 border border-amber-200/80 rounded-2xl flex items-start gap-3 text-amber-800 text-xs font-semibold shadow-sm animate-pulse">
           <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
           <div>
@@ -183,7 +204,7 @@ export default function StudentDashboard() {
           <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
             <FileText size={32} />
           </div>
-          <h3 className="text-slate-900 font-bold text-lg">No applications yet</h3>
+          <h3 className="text-slate-900 font-bold text-lg">No applications available</h3>
           <p className="text-slate-500 text-sm mt-1 max-w-xs mx-auto">
             You haven't submitted any internship applications yet. Click the button above to start.
           </p>
@@ -202,16 +223,22 @@ export default function StudentDashboard() {
                   <div className="flex flex-wrap items-center gap-3">
                     <h3 className="text-lg font-bold text-slate-900">{app.internshipDetails?.companyName || 'N/A'}</h3>
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${
-                      app.finalStatus === 'Approved' || app.principalDecision === 'Approved' ? getStatusColor('Approved') :
-                      app.finalStatus === 'Rejected' || app.principalDecision === 'Rejected' ? getStatusColor('Rejected') :
-                      getStatusColor(app.eligibilityStatus)
+                      app.finalStatus === 'Approved' ? getStatusColor('Approved') :
+                      app.finalStatus === 'Rejected' ? getStatusColor('Rejected') :
+                      app.finalStatus === 'Pending Principal Approval' && !['Pending CDC Review', 'Clarification Required by CDC', 'Rejected by CDC – Pending Principal Review'].includes(app.eligibilityStatus)
+                        ? getStatusColor('Pending Principal Approval')
+                        : getStatusColor(app.eligibilityStatus)
                     }`}>
-                      {app.finalStatus === 'Approved' || app.principalDecision === 'Approved' ? getStatusIcon('Approved') :
-                       app.finalStatus === 'Rejected' || app.principalDecision === 'Rejected' ? getStatusIcon('Rejected') :
-                       getStatusIcon(app.eligibilityStatus)}
-                      {app.finalStatus === 'Approved' || app.principalDecision === 'Approved' ? 'Approved' :
-                       app.finalStatus === 'Rejected' || app.principalDecision === 'Rejected' ? 'Rejected' :
-                       app.eligibilityStatus}
+                      {app.finalStatus === 'Approved' ? getStatusIcon('Approved') :
+                       app.finalStatus === 'Rejected' ? getStatusIcon('Rejected') :
+                       app.finalStatus === 'Pending Principal Approval' && !['Pending CDC Review', 'Clarification Required by CDC', 'Rejected by CDC – Pending Principal Review'].includes(app.eligibilityStatus)
+                         ? getStatusIcon('Pending Principal Approval')
+                         : getStatusIcon(app.eligibilityStatus)}
+                      {app.finalStatus === 'Approved' ? 'Approved' :
+                       app.finalStatus === 'Rejected' ? 'Rejected' :
+                       app.finalStatus === 'Pending Principal Approval' && !['Pending CDC Review', 'Clarification Required by CDC', 'Rejected by CDC – Pending Principal Review'].includes(app.eligibilityStatus)
+                         ? 'Pending Principal Approval'
+                         : app.eligibilityStatus}
                     </span>
                     {app.hasAcademicConflict && (
                       <span className="px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 bg-amber-50 text-amber-700 border-amber-200">

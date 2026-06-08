@@ -9,6 +9,7 @@ import {
 export default function CDCDashboard() {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [bands, setBands] = useState({ spfBand: '', cdcBand: '' });
   const [cdcRecommendation, setCdcRecommendation] = useState('Approved');
@@ -23,20 +24,39 @@ export default function CDCDashboard() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [search]);
 
   useEffect(() => {
     fetchApplications();
-  }, []);
+  }, [debouncedSearch, statusFilter, branchFilter, yearFilter, typeFilter, startDate, endDate]);
 
   const fetchApplications = async () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get('/api/internships/all', {
         headers: { Authorization: `Bearer ${token}` },
+        params: {
+          search: debouncedSearch,
+          status: statusFilter,
+          branch: branchFilter,
+          year: yearFilter,
+          type: typeFilter,
+          startDate,
+          endDate
+        }
       });
       setApplications(response.data);
-    } catch (err) {
+      setError(null);
+    } catch (err: any) {
       console.error('Error fetching applications:', err);
+      setError(err.response?.data?.message || err.message || 'Failed to load applications.');
     } finally {
       setLoading(false);
     }
@@ -80,7 +100,8 @@ export default function CDCDashboard() {
           status: statusFilter,
           type: typeFilter,
           startDate: startDate,
-          endDate: endDate
+          endDate: endDate,
+          search: search
         },
         responseType: 'blob'
       });
@@ -159,6 +180,16 @@ export default function CDCDashboard() {
           <p className="text-slate-500 text-sm mt-1">Review student applications, make recommendations, and assign bands.</p>
         </div>
       </div>
+
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200/80 rounded-2xl flex items-start gap-3 text-red-800 text-xs font-semibold shadow-sm">
+          <AlertCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold text-red-900">Error Loading Applications</p>
+            <p className="mt-0.5 leading-relaxed">{error}</p>
+          </div>
+        </div>
+      )}
 
       {/* Filters Bar */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
@@ -303,67 +334,79 @@ export default function CDCDashboard() {
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Company</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Attendance</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Eligibility</th>
-              <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredApps.map((app) => (
-              <tr key={app._id} className="hover:bg-slate-50/50 transition-colors">
-                <td className="px-6 py-4">
-                  <p className="text-slate-900 font-bold text-sm">{app.studentDetails.name}</p>
-                  <p className="text-slate-500 text-xs">{app.studentDetails.rollNumber}</p>
-                </td>
-                <td className="px-6 py-4">
-                  <p className="text-slate-700 font-medium text-sm">{app.internshipDetails.companyName}</p>
-                  <p className="text-slate-400 text-xs">{app.internshipDetails.totalDuration} Months</p>
-                </td>
-                <td className="px-6 py-4 text-center">
-                  <span className={`text-sm font-bold ${app.studentDetails.attendancePercentage < 75 ? 'text-red-500' : 'text-emerald-500'}`}>
-                    {app.studentDetails.attendancePercentage}%
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
-                    ['Approved', '3 Months Approved'].includes(app.eligibilityStatus) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                    ['Conditionally Approved', '3 Months + 3 Months Extension'].includes(app.eligibilityStatus) ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                    app.eligibilityStatus === 'Not Eligible' ? 'bg-red-50 text-red-600 border-red-100' :
-                    app.eligibilityStatus.includes('Rejected by CDC') ? 'bg-red-50 text-red-600 border-red-100' :
-                    app.eligibilityStatus === 'Needs Clarification' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                    'bg-blue-50 text-blue-600 border-blue-100'
-                  }`}>
-                    {app.eligibilityStatus}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <button
-                    onClick={() => {
-                      setSelectedApp(app);
-                      setBands({
-                        spfBand: app.spfBand || '',
-                        cdcBand: app.cdcBand || ''
-                      });
-                      setCdcRecommendation(app.cdcRecommendation || 'Approved');
-                      setCdcRemarks(app.cdcRemarks || '');
-                    }}
-                    className="p-2 text-slate-400 hover:text-[#78be21] transition-colors"
-                    title="Review Details"
-                  >
-                    <Eye size={20} />
-                  </button>
-                </td>
+      {filteredApps.length === 0 ? (
+        <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center shadow-sm">
+          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+            <FileText size={32} />
+          </div>
+          <h3 className="text-slate-900 font-bold text-lg">No applications available</h3>
+          <p className="text-slate-500 text-sm mt-1 max-w-xs mx-auto">
+            All submitted student applications have been processed or match your active filters.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Student</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Company</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Attendance</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Eligibility</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredApps.map((app) => (
+                <tr key={app._id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 py-4">
+                    <p className="text-slate-900 font-bold text-sm">{app.studentDetails.name}</p>
+                    <p className="text-slate-500 text-xs">{app.studentDetails.rollNumber}</p>
+                  </td>
+                  <td className="px-6 py-4">
+                    <p className="text-slate-700 font-medium text-sm">{app.internshipDetails.companyName}</p>
+                    <p className="text-slate-400 text-xs">{app.internshipDetails.totalDuration} Months</p>
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <span className={`text-sm font-bold ${app.studentDetails.attendancePercentage < 75 ? 'text-red-500' : 'text-emerald-500'}`}>
+                      {app.studentDetails.attendancePercentage}%
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
+                      ['Approved', '3 Months Approved'].includes(app.eligibilityStatus) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                      ['Conditionally Approved', '3 Months + 3 Months Extension'].includes(app.eligibilityStatus) ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                      app.eligibilityStatus === 'Not Eligible' ? 'bg-red-50 text-red-600 border-red-100' :
+                      app.eligibilityStatus.includes('Rejected by CDC') ? 'bg-red-50 text-red-600 border-red-100' :
+                      app.eligibilityStatus === 'Needs Clarification' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                      'bg-blue-50 text-blue-600 border-blue-100'
+                    }`}>
+                      {app.eligibilityStatus}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <button
+                      onClick={() => {
+                        setSelectedApp(app);
+                        setBands({
+                          spfBand: app.spfBand || '',
+                          cdcBand: app.cdcBand || ''
+                        });
+                        setCdcRecommendation(app.cdcRecommendation || 'Approved');
+                        setCdcRemarks(app.cdcRemarks || '');
+                      }}
+                      className="p-2 text-slate-400 hover:text-[#78be21] transition-colors"
+                      title="Review Details"
+                    >
+                      <Eye size={20} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Review Modal */}
       {selectedApp && (

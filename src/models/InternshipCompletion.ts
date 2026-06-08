@@ -11,8 +11,10 @@ const InternshipCompletionSchema = new mongoose.Schema({
   completionDate: { type: Date, required: true },
   reportFilePath: { type: String, required: true },
   reportFileName: { type: String, required: true },
+  reportPublicId: { type: String },
   certificateFilePath: { type: String, required: true },
   certificateFileName: { type: String, required: true },
+  certificatePublicId: { type: String },
   studentRemarks: { type: String, default: '' },
   status: { 
     type: String, 

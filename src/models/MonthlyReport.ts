@@ -10,6 +10,7 @@ const MonthlyReportSchema = new mongoose.Schema({
   month: { type: String, required: true }, // e.g. "June 2026"
   filePath: { type: String, required: true },
   fileName: { type: String, required: true },
+  publicId: { type: String },
   status: { 
     type: String, 
     enum: ['Pending CDC Review', 'Pending Principal Approval', 'Approved', 'Rejected'], 

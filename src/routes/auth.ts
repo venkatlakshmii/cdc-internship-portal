@@ -51,7 +51,7 @@ router.post('/register', async (req, res) => {
         return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
       }
 
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const hashedPassword = await bcrypt.hash(password, 12);
       const newUser = {
         _id: `mem-${Date.now()}`,
         name,
@@ -79,12 +79,14 @@ router.post('/register', async (req, res) => {
       }
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
+    const rollNumber = emailStr.split('@')[0].toUpperCase();
     const user = new User({ 
       name, 
       email: emailStr, 
       password: hashedPassword, 
       role: 'student',
+      rollNumber,
       profileRegistered: false
     });
     await user.save();
@@ -110,11 +112,26 @@ router.post('/login', async (req, res) => {
       const emailStr = email?.toLowerCase().trim();
       const memUser = memoryUsers.find(u => u.email === emailStr);
       if (memUser) {
-        const isMatch = await bcrypt.compare(password, memUser.password);
+        const isBcrypt = typeof memUser.password === 'string' && memUser.password.startsWith('$2');
+        let isMatch = false;
+        if (isBcrypt) {
+          isMatch = await bcrypt.compare(password, memUser.password);
+        } else {
+          isMatch = password === memUser.password;
+          if (isMatch) {
+            memUser.password = await bcrypt.hash(password, 12);
+          }
+        }
         if (isMatch) {
           console.log(`[LOGIN SUCCESS] Memory user found: ${email}`);
-          const token = jwt.sign({ id: memUser._id, role: memUser.role, email: memUser.email }, JWT_SECRET, { expiresIn: '1d' });
-          return res.json({ token, user: { id: memUser._id, name: memUser.name, email: memUser.email, role: memUser.role, profileRegistered: memUser.profileRegistered } });
+          const accessToken = jwt.sign({ id: memUser._id, role: memUser.role, email: memUser.email }, JWT_SECRET, { expiresIn: '1d' });
+          const refreshToken = jwt.sign({ id: memUser._id, role: memUser.role, email: memUser.email }, JWT_SECRET, { expiresIn: '7d' });
+          return res.json({ 
+            token: accessToken, 
+            accessToken, 
+            refreshToken, 
+            user: { id: memUser._id, name: memUser.name, email: memUser.email, role: memUser.role, profileRegistered: memUser.profileRegistered } 
+          });
         }
       }
 
@@ -129,29 +146,67 @@ router.post('/login', async (req, res) => {
       const fallbackUser = fallbackUsers.find(u => u.email.toLowerCase() === email?.trim().toLowerCase() && u.password === password);
       if (fallbackUser) {
         console.log(`[LOGIN SUCCESS] Fallback user found: ${email}`);
-        const token = jwt.sign({ id: 'fallback-id', role: fallbackUser.role, email: fallbackUser.email }, JWT_SECRET, { expiresIn: '1d' });
-        return res.json({ token, user: { id: 'fallback-id', name: fallbackUser.name, email: fallbackUser.email, role: fallbackUser.role, profileRegistered: false } });
+        const accessToken = jwt.sign({ id: 'fallback-id', role: fallbackUser.role, email: fallbackUser.email }, JWT_SECRET, { expiresIn: '1d' });
+        const refreshToken = jwt.sign({ id: 'fallback-id', role: fallbackUser.role, email: fallbackUser.email }, JWT_SECRET, { expiresIn: '7d' });
+        return res.json({ 
+          token: accessToken, 
+          accessToken, 
+          refreshToken, 
+          user: { id: 'fallback-id', name: fallbackUser.name, email: fallbackUser.email, role: fallbackUser.role, profileRegistered: false } 
+        });
       } else {
         console.log(`[LOGIN FAILED] Fallback user match not found for email: ${email}`);
         return res.status(400).json({ message: 'Invalid credentials (Fallback Mode)' });
       }
     }
 
-    const user = await User.findOne({ email: new RegExp(`^${email?.trim()}$`, 'i') });
+    const emailStr = (email || '').toLowerCase().trim();
+    const user = await User.findOne({ email: emailStr });
     if (!user) {
       console.log(`[LOGIN FAILED] User not found in database for email: "${email}"`);
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ message: 'User not found' });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    console.log("Stored Password:", user.password);
+    console.log("Entered Password:", password);
+
+    const isBcrypt = typeof user.password === 'string' && user.password.startsWith('$2');
+    let isMatch = false;
+    let needsMigration = false;
+
+    if (isBcrypt) {
+      isMatch = await bcrypt.compare(password, user.password);
+    } else {
+      isMatch = password === user.password;
+      needsMigration = isMatch;
+    }
+
     if (!isMatch) {
       console.log(`[LOGIN FAILED] Password mismatch for email: "${email}"`);
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(400).json({ message: 'Invalid password' });
+    }
+
+    if (needsMigration) {
+      console.log(`[AUTH MIGRATION] Migrating plaintext password to bcrypt hash for user: ${user.email}`);
+      try {
+        const hashedPassword = await bcrypt.hash(password, 12);
+        user.password = hashedPassword;
+        await user.save();
+        console.log(`[AUTH MIGRATION SUCCESS] Migrated password for user: ${user.email}`);
+      } catch (migrationErr) {
+        console.error(`[AUTH MIGRATION ERROR] Failed to save hashed password for user: ${user.email}`, migrationErr);
+      }
     }
 
     console.log(`[LOGIN SUCCESS] User authenticated: ${email}`);
-    const token = jwt.sign({ id: user._id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role, profileRegistered: user.profileRegistered } });
+    const accessToken = jwt.sign({ id: user._id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
+    const refreshToken = jwt.sign({ id: user._id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ 
+      token: accessToken, 
+      accessToken, 
+      refreshToken, 
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, profileRegistered: user.profileRegistered } 
+    });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Error logging in. Please check if the database is running.' });
@@ -275,7 +330,7 @@ router.post('/forgot-password/verify', async (req, res) => {
       return res.json({ message: 'Email verified successfully.' });
     }
 
-    const user = await User.findOne({ email: new RegExp(`^${emailStr}$`, 'i'), role: 'student' });
+    const user = await User.findOne({ email: emailStr, role: 'student' });
     if (!user) {
       return res.status(404).json({ message: 'Student email not found.' });
     }
@@ -314,7 +369,7 @@ router.post('/forgot-password/reset', async (req, res) => {
         return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
       }
 
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const hashedPassword = await bcrypt.hash(newPassword, 12);
       if (existsIndex !== -1) {
         memoryUsers[existsIndex].password = hashedPassword;
       } else {
@@ -335,7 +390,7 @@ router.post('/forgot-password/reset', async (req, res) => {
     }
 
     // DB uniqueness check
-    const studentUsers = await User.find({ role: 'student', email: { $not: new RegExp(`^${emailStr}$`, 'i') } });
+    const studentUsers = await User.find({ role: 'student', email: { $ne: emailStr } });
     for (const student of studentUsers) {
       const isMatch = await bcrypt.compare(newPassword, student.password);
       if (isMatch) {
@@ -343,9 +398,9 @@ router.post('/forgot-password/reset', async (req, res) => {
       }
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
     const user = await User.findOneAndUpdate(
-      { email: new RegExp(`^${emailStr}$`, 'i'), role: 'student' },
+      { email: emailStr, role: 'student' },
       { password: hashedPassword },
       { new: true }
     );

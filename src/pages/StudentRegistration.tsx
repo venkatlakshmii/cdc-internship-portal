@@ -79,7 +79,15 @@ export default function StudentRegistration() {
       });
 
       // Update local storage user state
-      const localUser = JSON.parse(localStorage.getItem('user') || '{}');
+      let localUser: any = {};
+      try {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser && storedUser !== 'undefined') {
+          localUser = JSON.parse(storedUser);
+        }
+      } catch (e) {
+        console.error('Failed to parse user in StudentRegistration', e);
+      }
       localUser.profileRegistered = true;
       localUser.name = formData.name;
       localStorage.setItem('user', JSON.stringify(localUser));

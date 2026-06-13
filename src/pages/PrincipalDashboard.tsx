@@ -144,7 +144,7 @@ export default function PrincipalDashboard() {
     })();
 
     const matchBranch = branchFilter === 'all' || app.studentDetails?.branch === branchFilter;
-    const matchYear = yearFilter === 'all' || (app.studentDetails?.year && app.studentDetails.year.includes(yearFilter));
+    const matchYear = yearFilter === 'all' || (app.studentDetails?.year && (app.studentDetails.year.includes(yearFilter + ' Year') || app.studentDetails.year === yearFilter));
     const matchType = typeFilter === 'all' || app.internshipDetails?.mode === typeFilter;
     
     const matchDate = (() => {
@@ -350,21 +350,21 @@ export default function PrincipalDashboard() {
                 <div className="flex flex-wrap items-center gap-3">
                   <h3 className="text-lg font-bold text-slate-900">{app.studentDetails.name}</h3>
                   {(() => {
-                    if (app.cdcRecommendation === 'Approved' || ['Approved', '3 Months Approved', '3 Months + 3 Months Extension'].includes(app.eligibilityStatus)) {
+                    if (app.cdcRecommendation === 'Approved') {
                       return (
                         <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-emerald-50 text-emerald-600 border-emerald-100 uppercase tracking-wider">
                           CDC Recommended: Approved
                         </span>
                       );
                     }
-                    if (app.cdcRecommendation === 'Rejected' || app.eligibilityStatus.includes('Rejected by CDC')) {
+                    if (app.cdcRecommendation === 'Rejected') {
                       return (
                         <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-red-50 text-red-600 border-red-100 uppercase tracking-wider">
                           CDC Recommended: Rejected
                         </span>
                       );
                     }
-                    if (app.cdcRecommendation === 'Needs Clarification' || app.eligibilityStatus === 'Clarification Required by CDC' || app.eligibilityStatus === 'Needs Clarification') {
+                    if (app.cdcRecommendation === 'Needs Clarification') {
                       return (
                         <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-amber-50 text-amber-600 border-amber-100 uppercase tracking-wider">
                           CDC Recommended: Needs Clarification
@@ -374,6 +374,18 @@ export default function PrincipalDashboard() {
                     return (
                       <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-slate-50 text-slate-600 border-slate-100 uppercase tracking-wider">
                         CDC Recommended: Pending
+                      </span>
+                    );
+                  })()}
+                  {(() => {
+                    const status = app.principalDecision || 'Pending';
+                    const colorClass = 
+                      status === 'Approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                      status === 'Rejected' ? 'bg-red-50 text-red-600 border-red-100' :
+                      'bg-blue-50 text-blue-600 border-blue-100';
+                    return (
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${colorClass}`}>
+                        Principal Decision: {status}
                       </span>
                     );
                   })()}

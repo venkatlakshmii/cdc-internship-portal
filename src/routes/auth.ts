@@ -26,7 +26,7 @@ router.post('/register', async (req, res) => {
     const emailStr = email.toLowerCase().trim();
     const hitamEmailRegex = /^[0-9]{2}e51a[0-9a-z]{4}@hitam\.org$/;
     if (!hitamEmailRegex.test(emailStr)) {
-      return res.status(400).json({ message: 'Email must follow the official student format ending in @hitam.org (e.g. 24E51A1234@hitam.org)' });
+      return res.status(400).json({ message: 'Email must follow the official student format ending in @hitam.org (e.g. rollnumber@hitam.org)' });
     }
 
     if (emailStr === 'cdc@hitam.org' || emailStr === 'principal@hitam.org') {
@@ -35,7 +35,7 @@ router.post('/register', async (req, res) => {
 
     // In-memory Fallback checks
     if (mongoose.connection.readyState !== 1) {
-      const existingUser = memoryUsers.find(u => u.email === emailStr) || (emailStr === '24e51a1234@hitam.org' ? { email: '24e51a1234@hitam.org' } : null);
+      const existingUser = memoryUsers.find(u => u.email === emailStr) || (emailStr === '24e51a6665@hitam.org' ? { email: '24e51a6665@hitam.org' } : null);
       if (existingUser) {
         return res.status(400).json({ message: 'User already exists' });
       }
@@ -102,6 +102,10 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      console.log(`[LOGIN REJECTED] Non-string input detected. Email type: ${typeof email}, Password type: ${typeof password}`);
+      return res.status(400).json({ message: 'Email and password must be strings.' });
+    }
     console.log(`[LOGIN ATTEMPT] Email: "${email}", Password Length: ${password?.length}`);
     
     // Fallback for demo purposes if DB is not connected
@@ -136,7 +140,7 @@ router.post('/login', async (req, res) => {
       }
 
       const fallbackUsers = [
-        { name: 'Student User', email: '24E51A1234@hitam.org', password: 'password123', role: 'student' },
+        { name: 'Student User', email: '24E51A6665@hitam.org', password: 'password123', role: 'student' },
         { name: 'CDC Faculty', email: 'cdc@hitam.org', password: 'password123', role: 'cdc' },
         { name: 'Principal', email: 'principal@hitam.org', password: 'password123', role: 'principal' },
         { name: 'Head of Department', email: 'hod@hitam.org', password: 'password123', role: 'hod' },
@@ -238,8 +242,8 @@ router.get('/profile', authenticate, async (req: AuthRequest, res) => {
 
       return res.json({
         name: 'Student User',
-        email: req.user?.email || '24E51A1234@hitam.org',
-        rollNumber: '24E51A1234',
+        email: req.user?.email || '24E51A6665@hitam.org',
+        rollNumber: '24E51A6665',
         branch: 'CSE',
         year: '4th',
         section: 'A',
@@ -321,7 +325,7 @@ router.post('/forgot-password/verify', async (req, res) => {
     if (mongoose.connection.readyState !== 1) {
       // In-memory fallback verification
       const fallbackUsers = [
-        { name: 'Student User', email: '24e51a1234@hitam.org', role: 'student' }
+        { name: 'Student User', email: '24e51a6665@hitam.org', role: 'student' }
       ];
       const exists = memoryUsers.find(u => u.email === emailStr) || fallbackUsers.find(u => u.email === emailStr);
       if (!exists || exists.role !== 'student') {

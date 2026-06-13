@@ -269,7 +269,7 @@ export default function InternshipCompletion() {
     
     const matchStatus = statusFilter === 'all' || c.status === statusFilter;
     const matchBranch = branchFilter === 'all' || c.studentDetails?.branch === branchFilter;
-    const matchYear = yearFilter === 'all' || (c.studentDetails?.year && c.studentDetails.year.includes(yearFilter));
+    const matchYear = yearFilter === 'all' || (c.studentDetails?.year && (c.studentDetails.year.includes(yearFilter + ' Year') || c.studentDetails.year === yearFilter));
 
     return matchSearch && matchStatus && matchBranch && matchYear;
   });

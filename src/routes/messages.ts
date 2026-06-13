@@ -5,6 +5,7 @@ import fs from 'fs';
 import { Message } from '../models/Message.ts';
 import { User } from '../models/User.ts';
 import { Internship } from '../models/Internship.ts';
+import { DbFile } from '../models/DbFile.ts';
 import { authenticate, AuthRequest } from '../middleware/auth.ts';
 import { getModuleStatusInfo } from './portalControl.ts';
 
@@ -138,9 +139,16 @@ router.post('/send', authenticate, upload.single('attachment'), async (req: Auth
     };
 
     if (req.file) {
-      messageData.attachmentPath = req.file?.path || '';
-      messageData.attachmentName = req.file?.originalname || '';
-      messageData.attachmentPublicId = req.file?.filename || '';
+      const dbFile = new DbFile({
+        filename: req.file.originalname,
+        contentType: req.file.mimetype,
+        data: req.file.buffer,
+        size: req.file.size
+      });
+      await dbFile.save();
+      messageData.attachmentPath = `api/files/download/${dbFile._id}`;
+      messageData.attachmentName = req.file.originalname;
+      messageData.attachmentPublicId = dbFile._id.toString();
     }
 
     const newMessage = new Message(messageData);

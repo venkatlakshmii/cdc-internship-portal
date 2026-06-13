@@ -66,6 +66,26 @@ export default function StudentDashboard() {
     fetchDashboardData();
   }, []);
 
+  const getCardStatus = (app: any) => {
+    if (app.principalDecision === 'Approved') {
+      return 'Approved';
+    }
+    if (app.principalDecision === 'Rejected') {
+      return 'Rejected';
+    }
+    // Principal decision is pending
+    if (app.cdcRecommendation === 'Needs Clarification' || app.eligibilityStatus === 'Clarification Required by CDC') {
+      return 'Clarification Required by CDC';
+    }
+    if (app.cdcRecommendation === 'Rejected' || app.eligibilityStatus === 'Rejected by CDC – Pending Principal Review') {
+      return 'Rejected by CDC – Pending Principal Review';
+    }
+    if (app.cdcRecommendation === 'Approved') {
+      return 'Pending Principal Approval';
+    }
+    return app.eligibilityStatus || 'Pending CDC Review';
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Approved':
@@ -222,24 +242,18 @@ export default function StudentDashboard() {
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-3">
                     <h3 className="text-lg font-bold text-slate-900">{app.internshipDetails?.companyName || 'N/A'}</h3>
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${
-                      app.finalStatus === 'Approved' ? getStatusColor('Approved') :
-                      app.finalStatus === 'Rejected' ? getStatusColor('Rejected') :
-                      app.finalStatus === 'Pending Principal Approval' && !['Pending CDC Review', 'Clarification Required by CDC', 'Rejected by CDC – Pending Principal Review'].includes(app.eligibilityStatus)
-                        ? getStatusColor('Pending Principal Approval')
-                        : getStatusColor(app.eligibilityStatus)
-                    }`}>
-                      {app.finalStatus === 'Approved' ? getStatusIcon('Approved') :
-                       app.finalStatus === 'Rejected' ? getStatusIcon('Rejected') :
-                       app.finalStatus === 'Pending Principal Approval' && !['Pending CDC Review', 'Clarification Required by CDC', 'Rejected by CDC – Pending Principal Review'].includes(app.eligibilityStatus)
-                         ? getStatusIcon('Pending Principal Approval')
-                         : getStatusIcon(app.eligibilityStatus)}
-                      {app.finalStatus === 'Approved' ? 'Approved' :
-                       app.finalStatus === 'Rejected' ? 'Rejected' :
-                       app.finalStatus === 'Pending Principal Approval' && !['Pending CDC Review', 'Clarification Required by CDC', 'Rejected by CDC – Pending Principal Review'].includes(app.eligibilityStatus)
-                         ? 'Pending Principal Approval'
-                         : app.eligibilityStatus}
-                    </span>
+                    {(() => {
+                      const displayStatus = getCardStatus(app);
+                      return (
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${getStatusColor(displayStatus)}`}>
+                          {getStatusIcon(displayStatus)}
+                          {displayStatus === 'Pending Principal Approval' ? 'Pending Principal Approval' :
+                           displayStatus === 'Rejected by CDC – Pending Principal Review' ? 'Rejected by CDC – Pending Principal Review' :
+                           displayStatus === 'Clarification Required by CDC' ? 'Clarification Required by CDC' :
+                           displayStatus}
+                        </span>
+                      );
+                    })()}
                     {app.hasAcademicConflict && (
                       <span className="px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 bg-amber-50 text-amber-700 border-amber-200">
                         <AlertTriangle size={12} className="animate-bounce text-amber-500" />
@@ -248,7 +262,7 @@ export default function StudentDashboard() {
                     )}
                   </div>
                   
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2 text-sm col-span-2">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-x-8 gap-y-2 text-sm col-span-2">
                     <div>
                       <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Duration</p>
                       <p className="text-slate-700 font-medium">{app.internshipDetails?.totalDuration} Months</p>
@@ -262,22 +276,25 @@ export default function StudentDashboard() {
                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider mt-1 ${
                         app.cdcRecommendation === 'Approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
                         app.cdcRecommendation === 'Rejected' ? 'bg-red-50 text-red-600 border-red-100' :
-                        app.cdcRecommendation === 'Needs Clarification' || app.eligibilityStatus === 'Clarification Required by CDC' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                        app.cdcRecommendation === 'Needs Clarification' || app.cdcRecommendation === 'Clarification' || app.eligibilityStatus === 'Clarification Required by CDC' ? 'bg-amber-50 text-amber-600 border-amber-100' :
                         'bg-blue-50 text-blue-600 border-blue-100'
                       }`}>
-                        {app.cdcRecommendation || 'Pending'}
+                        {app.cdcRecommendation === 'Needs Clarification' ? 'Clarification' : (app.cdcRecommendation || 'Pending')}
                       </span>
                     </div>
                     <div>
-                      <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Principal Decision</p>
+                      <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Principal Final Decision</p>
                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider mt-1 ${
-                        app.eligibilityStatus === 'Clarification Required by CDC' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                        app.principalDecision === 'Approved' || app.finalStatus === 'Approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                        app.principalDecision === 'Rejected' || app.finalStatus === 'Rejected' ? 'bg-red-50 text-red-600 border-red-100' :
+                        app.principalDecision === 'Approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                        app.principalDecision === 'Rejected' ? 'bg-red-50 text-red-600 border-red-100' :
                         'bg-blue-50 text-blue-600 border-blue-100'
                       }`}>
-                        {app.eligibilityStatus === 'Clarification Required by CDC' ? 'Awaiting Student Response' : (app.principalDecision || 'Pending')}
+                        {app.principalDecision || 'Pending'}
                       </span>
+                    </div>
+                    <div>
+                      <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Permissible Months</p>
+                      <p className="text-slate-700 font-medium">{app.principalDecision === 'Approved' ? (app.principalApprovedMonths ?? 0) : 0} Months</p>
                     </div>
                   </div>
                 </div>
@@ -319,10 +336,10 @@ export default function StudentDashboard() {
                 </div>
               )}
 
-              {app.remarks && (
+              {app.principalRemarks && (
                 <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-600 italic">
                   <span className="font-bold not-italic mr-2">Remarks:</span>
-                  "{app.remarks}"
+                  "{app.principalRemarks}"
                 </div>
               )}
 

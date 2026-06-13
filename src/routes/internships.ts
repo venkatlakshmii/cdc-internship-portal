@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import mongoose from 'mongoose';
 import { Internship } from '../models/Internship.ts';
+import { DbFile } from '../models/DbFile.ts';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.ts';
 import { calculateEligibility } from '../utils/eligibility.ts';
 import { getModuleStatusInfo, memoryAcademicCalendar } from './portalControl.ts';
@@ -127,56 +128,52 @@ function formatInternshipForFrontend(app: any) {
     appObj.principalDecision = 'Pending';
   }
 
+  // Add principalApprovedMonths and principalRemarks
+  let approvedMonths = appObj.permissibleDuration || 0;
+  if (appObj.principalDecision === 'Approved' && approvedMonths === 0) {
+    const proposed = appObj.internshipDetails?.totalDuration || 0;
+    const yearSem = appObj.studentDetails?.year || '';
+    const is2ndYear = yearSem.includes('2nd Year');
+    const is3rdYear2ndSem = yearSem === '3rd Year – 2nd Sem';
+    
+    let limit = 6;
+    if (is2ndYear) limit = 1;
+    else if (is3rdYear2ndSem) limit = 3;
+    
+    approvedMonths = Math.min(proposed, limit);
+    if (approvedMonths === 0) approvedMonths = proposed;
+  }
+  appObj.principalApprovedMonths = appObj.principalDecision === 'Approved' ? approvedMonths : 0;
+  appObj.principalRemarks = principalRemarksVal || '';
+
   // Dynamically generate timeline
-  const studentEntries = (appObj.timeline || []).filter((t: any) => t.role === 'student');
-  if (studentEntries.length === 0) {
+  const studentEntries = [];
+  studentEntries.push({
+    status: 'Submitted',
+    updatedBy: appObj.studentDetails?.name || 'Student',
+    role: 'student',
+    remarks: 'Application submitted successfully',
+    timestamp: appObj.createdAt || new Date()
+  });
+
+  if (cdcStatus !== 'PENDING') {
     studentEntries.push({
-      status: 'Submitted by Student',
-      updatedBy: appObj.studentDetails?.name || 'Student',
-      role: 'student',
-      remarks: 'Application submitted successfully',
-      timestamp: appObj.createdAt || new Date()
+      status: 'CDC Reviewed',
+      updatedBy: 'CDC Faculty',
+      role: 'cdc',
+      remarks: cdcRemarksVal ? `Recommendation: ${appObj.cdcRecommendation}. Remarks: ${cdcRemarksVal}` : `Recommendation: ${appObj.cdcRecommendation}`,
+      timestamp: cdcReviewedAtVal
     });
   }
 
-  if (cdcStatus !== 'PENDING') {
-    let cdcStatusText = '';
-    if (cdcStatus === 'APPROVED' || cdcStatus === 'APPROVED_BY_CDC' || appObj.currentStatus === 'CDC_APPROVED' || appObj.status === 'cdc_approved') {
-      cdcStatusText = 'CDC Approved Application';
-    } else if (cdcStatus === 'REJECTED') {
-      cdcStatusText = 'CDC Rejected Application';
-    } else if (cdcStatus === 'CLARIFICATION_REQUIRED' || cdcStatus === 'NEEDS CLARIFICATION' || cdcStatus === 'NEEDS_CLARIFICATION') {
-      cdcStatusText = 'Clarification Requested by CDC';
-    }
-    
-    if (cdcStatusText) {
-      studentEntries.push({
-        status: cdcStatusText,
-        updatedBy: 'CDC Faculty',
-        role: 'cdc',
-        remarks: cdcRemarksVal,
-        timestamp: cdcReviewedAtVal
-      });
-    }
-  }
-
   if (principalStatus !== 'PENDING') {
-    let principalStatusText = '';
-    if (principalStatus === 'APPROVED') {
-      principalStatusText = 'Final Decision by Principal: Approved';
-    } else if (principalStatus === 'REJECTED') {
-      principalStatusText = 'Final Decision by Principal: Rejected';
-    }
-    
-    if (principalStatusText) {
-      studentEntries.push({
-        status: principalStatusText,
-        updatedBy: 'Principal',
-        role: 'principal',
-        remarks: principalRemarksVal,
-        timestamp: principalReviewedAtVal
-      });
-    }
+    studentEntries.push({
+      status: 'Principal Final Decision',
+      updatedBy: 'Principal',
+      role: 'principal',
+      remarks: principalRemarksVal ? `Decision: ${appObj.principalDecision}. Remarks: ${principalRemarksVal}` : `Decision: ${appObj.principalDecision}`,
+      timestamp: principalReviewedAtVal
+    });
   }
 
   appObj.timeline = studentEntries;
@@ -258,6 +255,14 @@ router.post('/submit', authenticate, authorize(['student']), upload.fields([
     const fromDate = new Date(body.internshipDetails.fromDate);
     const toDate = new Date(body.internshipDetails.toDate);
     if (!isNaN(fromDate.getTime()) && !isNaN(toDate.getTime())) {
+      const today = new Date();
+      const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const startOfFromDate = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+      const daysPrior = Math.ceil((startOfFromDate.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysPrior < 15) {
+        return res.status(400).json({ message: 'Internship applications must be submitted at least 15 days prior to the internship start date.' });
+      }
+
       const diffTime = Math.abs(toDate.getTime() - fromDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
@@ -285,6 +290,52 @@ router.post('/submit', authenticate, authorize(['student']), upload.fields([
 
     const conflict = await detectConflict(body.internshipDetails.fromDate, body.internshipDetails.toDate);
 
+    let offerLetterPath = '';
+    let offerLetterId = '';
+    if (files?.offerLetter?.[0]) {
+      const f = files.offerLetter[0];
+      const dbFile = new DbFile({
+        filename: f.originalname,
+        contentType: f.mimetype,
+        data: f.buffer,
+        size: f.size
+      });
+      await dbFile.save();
+      offerLetterPath = `api/files/download/${dbFile._id}`;
+      offerLetterId = dbFile._id.toString();
+    }
+
+    let joiningLetterPath = '';
+    let joiningLetterId = '';
+    if (files?.joiningLetter?.[0]) {
+      const f = files.joiningLetter[0];
+      const dbFile = new DbFile({
+        filename: f.originalname,
+        contentType: f.mimetype,
+        data: f.buffer,
+        size: f.size
+      });
+      await dbFile.save();
+      joiningLetterPath = `api/files/download/${dbFile._id}`;
+      joiningLetterId = dbFile._id.toString();
+    }
+
+    const internshipProofPaths = [];
+    const internshipProofIds = [];
+    if (files?.internshipProof) {
+      for (const f of files.internshipProof) {
+        const dbFile = new DbFile({
+          filename: f.originalname,
+          contentType: f.mimetype,
+          data: f.buffer,
+          size: f.size
+        });
+        await dbFile.save();
+        internshipProofPaths.push(`api/files/download/${dbFile._id}`);
+        internshipProofIds.push(dbFile._id.toString());
+      }
+    }
+
     const internshipData = {
       _id: new mongoose.Types.ObjectId().toString(),
       studentId: req.user?.id,
@@ -297,14 +348,14 @@ router.post('/submit', authenticate, authorize(['student']), upload.fields([
       currentStatus: 'SUBMITTED',
       proposedDuration: proposedDuration,
       attachments: {
-        offerLetter: files?.offerLetter?.[0]?.path,
-        joiningLetter: files?.joiningLetter?.[0]?.path,
-        internshipProof: files?.internshipProof?.map((f: any) => f.path) || [],
+        offerLetter: offerLetterPath,
+        joiningLetter: joiningLetterPath,
+        internshipProof: internshipProofPaths,
       },
       cloudinaryPublicIds: {
-        offerLetter: files?.offerLetter?.[0]?.filename,
-        joiningLetter: files?.joiningLetter?.[0]?.filename,
-        internshipProof: files?.internshipProof?.map((f: any) => f.filename) || [],
+        offerLetter: offerLetterId,
+        joiningLetter: joiningLetterId,
+        internshipProof: internshipProofIds,
       },
       eligibilityStatus,
       finalStatus: 'Pending Principal Approval',
@@ -482,6 +533,14 @@ router.put('/update/:id', authenticate, authorize(['student']), upload.fields([
     const proposedDuration = Number(body.internshipDetails.totalDuration || 0);
 
     if (!isNaN(fromDate.getTime()) && !isNaN(toDate.getTime())) {
+      const today = new Date();
+      const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const startOfFromDate = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+      const daysPrior = Math.ceil((startOfFromDate.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysPrior < 15) {
+        return res.status(400).json({ message: 'Internship applications must be submitted at least 15 days prior to the internship start date.' });
+      }
+
       const diffTime = Math.abs(toDate.getTime() - fromDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
@@ -496,13 +555,55 @@ router.put('/update/:id', authenticate, authorize(['student']), upload.fields([
       }
     }
 
-    const offerLetterPath = files?.offerLetter?.[0]?.path || existingApp.attachments?.offerLetter;
-    const joiningLetterPath = files?.joiningLetter?.[0]?.path || existingApp.attachments?.joiningLetter;
-    const internshipProofPaths = files?.internshipProof?.map((f: any) => f.path) || existingApp.attachments?.internshipProof || [];
+    let offerLetterPath = existingApp.attachments?.offerLetter;
+    let offerLetterPublicId = existingApp.cloudinaryPublicIds?.offerLetter;
+    if (files?.offerLetter?.[0]) {
+      const f = files.offerLetter[0];
+      const dbFile = new DbFile({
+        filename: f.originalname,
+        contentType: f.mimetype,
+        data: f.buffer,
+        size: f.size
+      });
+      await dbFile.save();
+      offerLetterPath = `api/files/download/${dbFile._id}`;
+      offerLetterPublicId = dbFile._id.toString();
+    }
 
-    const offerLetterPublicId = files?.offerLetter?.[0]?.filename || existingApp.cloudinaryPublicIds?.offerLetter;
-    const joiningLetterPublicId = files?.joiningLetter?.[0]?.filename || existingApp.cloudinaryPublicIds?.joiningLetter;
-    const internshipProofPublicIds = files?.internshipProof?.map((f: any) => f.filename) || existingApp.cloudinaryPublicIds?.internshipProof || [];
+    let joiningLetterPath = existingApp.attachments?.joiningLetter;
+    let joiningLetterPublicId = existingApp.cloudinaryPublicIds?.joiningLetter;
+    if (files?.joiningLetter?.[0]) {
+      const f = files.joiningLetter[0];
+      const dbFile = new DbFile({
+        filename: f.originalname,
+        contentType: f.mimetype,
+        data: f.buffer,
+        size: f.size
+      });
+      await dbFile.save();
+      joiningLetterPath = `api/files/download/${dbFile._id}`;
+      joiningLetterPublicId = dbFile._id.toString();
+    }
+
+    let internshipProofPaths = existingApp.attachments?.internshipProof || [];
+    let internshipProofPublicIds = existingApp.cloudinaryPublicIds?.internshipProof || [];
+    if (files?.internshipProof) {
+      const paths = [];
+      const ids = [];
+      for (const f of files.internshipProof) {
+        const dbFile = new DbFile({
+          filename: f.originalname,
+          contentType: f.mimetype,
+          data: f.buffer,
+          size: f.size
+        });
+        await dbFile.save();
+        paths.push(`api/files/download/${dbFile._id}`);
+        ids.push(dbFile._id.toString());
+      }
+      internshipProofPaths = paths;
+      internshipProofPublicIds = ids;
+    }
 
     const updatedTimeline = existingApp.timeline || [];
     updatedTimeline.push({
@@ -552,7 +653,7 @@ router.put('/update/:id', authenticate, authorize(['student']), upload.fields([
 });
 
 // CDC: View All Applications
-router.get('/all', authenticate, authorize(['cdc']), async (req, res, next) => {
+export const getAllApplications = async (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
   try {
     const { search, status, branch, year, type, startDate, endDate } = req.query;
     
@@ -563,7 +664,7 @@ router.get('/all', authenticate, authorize(['cdc']), async (req, res, next) => {
       query['studentDetails.branch'] = branch;
     }
     if (year && year !== 'all') {
-      query['studentDetails.year'] = new RegExp(String(year), 'i');
+      query['studentDetails.year'] = new RegExp(String(year) + ' Year', 'i');
     }
     if (type && type !== 'all') {
       query['internshipDetails.mode'] = type;
@@ -620,10 +721,11 @@ router.get('/all', authenticate, authorize(['cdc']), async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+};
+router.get('/all', authenticate, authorize(['cdc']), getAllApplications);
 
 // CDC: Update Bands and Eligibility
-router.patch('/cdc-review/:id', authenticate, authorize(['cdc']), async (req: AuthRequest, res, next) => {
+export const handleCdcReview = async (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
   try {
     const { spfBand, cdcBand, cdcRecommendation, cdcRemarks, action } = req.body;
     const rec = cdcRecommendation || (action === 'reject' ? 'Rejected' : 'Approved');
@@ -637,16 +739,18 @@ router.patch('/cdc-review/:id', authenticate, authorize(['cdc']), async (req: Au
     let finalCdc = cdcBand || 'A';
     let permDuration = 0;
 
-    if (rec === 'Rejected') {
+    const recStr = String(rec).trim().toLowerCase();
+    if (recStr === 'rejected') {
       finalEligibility = 'Rejected by CDC – Pending Principal Review';
-    } else if (rec === 'Needs Clarification') {
+    } else if (recStr === 'needs clarification' || recStr === 'clarification') {
       finalEligibility = 'Clarification Required by CDC';
     } else {
       const result = calculateEligibility(
         internship.studentDetails.attendancePercentage,
         spfBand || 'A',
         cdcBand || 'A',
-        internship.internshipDetails.totalDuration || 0
+        internship.internshipDetails.totalDuration || 0,
+        internship.studentDetails.year || ''
       );
       finalEligibility = result.eligibilityStatus;
       permDuration = result.permissibleDuration || 0;
@@ -658,9 +762,29 @@ router.patch('/cdc-review/:id', authenticate, authorize(['cdc']), async (req: Au
     internship.eligibilityStatus = finalEligibility as any;
     
     let dbCdcStatus = 'PENDING';
-    if (rec === 'Approved') dbCdcStatus = 'APPROVED';
-    else if (rec === 'Rejected') dbCdcStatus = 'REJECTED';
-    else if (rec === 'Needs Clarification') dbCdcStatus = 'CLARIFICATION_REQUIRED';
+    let cdcStatusVal = 'Pending';
+    let timelineAction = 'CDC Action';
+    
+    if (recStr === 'approved') {
+      dbCdcStatus = 'APPROVED';
+      cdcStatusVal = 'Approved';
+      internship.status = 'cdc_approved';
+      internship.currentStatus = 'CDC_APPROVED';
+      internship.principalDecision = { status: 'PENDING', remarks: '' };
+      timelineAction = 'CDC Approved';
+    } else if (recStr === 'rejected') {
+      dbCdcStatus = 'REJECTED';
+      cdcStatusVal = 'Rejected';
+      internship.status = 'cdc_rejected';
+      internship.currentStatus = 'CDC_REJECTED';
+      timelineAction = 'CDC Rejected';
+    } else if (recStr === 'needs clarification' || recStr === 'clarification') {
+      dbCdcStatus = 'CLARIFICATION_REQUIRED';
+      cdcStatusVal = 'Needs Clarification';
+      internship.status = 'clarification';
+      internship.currentStatus = 'CLARIFICATION_REQUIRED';
+      timelineAction = 'Clarification Requested by CDC';
+    }
     
     internship.cdcRecommendation = {
       status: dbCdcStatus,
@@ -668,72 +792,77 @@ router.patch('/cdc-review/:id', authenticate, authorize(['cdc']), async (req: Au
       reviewedAt: new Date()
     };
     internship.cdcRemarks = rems;
-
-    // Map recommendation to cdcStatus enum
-    let cdcStatusVal = 'Pending';
-    if (rec === 'Approved') {
-      cdcStatusVal = 'Approved';
-      internship.status = 'cdc_approved';
-      internship.currentStatus = 'CDC_APPROVED';
-      internship.principalDecision = { status: 'PENDING', remarks: '' };
-    } else if (rec === 'Rejected') {
-      cdcStatusVal = 'Rejected';
-      internship.status = 'cdc_rejected';
-      internship.currentStatus = 'CDC_REJECTED';
-    } else if (rec === 'Needs Clarification') {
-      cdcStatusVal = 'Needs Clarification';
-      internship.status = 'clarification';
-      internship.currentStatus = 'CLARIFICATION_REQUIRED';
-    }
     internship.cdcStatus = cdcStatusVal as any;
     
-    // Clear non-student entries to keep DB timeline clean
+    // Clear legacy timeline entries of same type before pushing to keep history clean
     internship.timeline = internship.timeline.filter((t: any) => t.role === 'student') as any;
+    
+    internship.timeline.push({
+      action: timelineAction,
+      by: 'CDC',
+      timestamp: new Date(),
+      status: timelineAction,
+      updatedBy: req.user?.email || 'CDC Faculty',
+      role: 'cdc',
+      remarks: rems
+    } as any);
+    
     internship.markModified('timeline');
 
     await internship.save();
-    console.log("Application Status:", internship.status);
+    
+    // Add debug logs
+    console.log("CDC APPROVED:", internship._id);
+    console.log("Current Status:", internship.currentStatus);
+
+    // Refresh from MongoDB to get fresh document state
+    const refreshedInternship = await Internship.findById(internship._id);
+    const finalInternship = refreshedInternship || internship;
 
     const notificationContent = rec === 'Needs Clarification'
       ? "CDC Department has requested clarification. Please meet the CDC office."
-      : `CDC Faculty has reviewed your internship application for ${internship.internshipDetails.companyName}. Recommendation: ${rec}. Remarks: "${rems || 'None'}"`;
+      : `CDC Faculty has reviewed your internship application for ${finalInternship.internshipDetails.companyName}. Recommendation: ${rec}. Remarks: "${rems || 'None'}"`;
 
     // Send notification
     createSystemNotification(
-      internship.studentId.toString(),
+      finalInternship.studentId.toString(),
       'Internship CDC Review Notification',
       notificationContent,
       'cdc'
     ).catch(console.error);
 
-    res.json({ message: 'CDC review updated', internship: formatInternshipForFrontend(internship) });
+    res.json({ message: 'CDC review updated', internship: formatInternshipForFrontend(finalInternship) });
   } catch (error) {
     next(error);
   }
-});
+};
+router.patch('/cdc-review/:id', authenticate, authorize(['cdc']), handleCdcReview);
 
 // Principal: View Forwarded Applications
-router.get('/forwarded', authenticate, authorize(['principal']), async (req, res, next) => {
+export const getForwardedApplications = async (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
   try {
     const { search, branch, year, type, startDate, endDate } = req.query;
     
-    // Build query object strictly matching cdcRecommendation.status = APPROVED/Approved or currentStatus = CDC_APPROVED
-    const query: any = {
+    // Status conditions for forwarded applications
+    const statusQuery = {
       $or: [
-        { 'cdcRecommendation.status': 'APPROVED' },
-        { 'cdcRecommendation.status': 'Approved' },
-        { cdcRecommendation: 'Approved' },
-        { cdcRecommendation: 'APPROVED' },
-        { currentStatus: 'CDC_APPROVED' },
-        { status: 'cdc_approved' }
+        { 'cdcRecommendation.status': { $in: ['APPROVED', 'Approved', 'REJECTED', 'Rejected'] } },
+        { cdcRecommendation: { $in: ['APPROVED', 'Approved', 'REJECTED', 'Rejected'] } },
+        { currentStatus: { $in: ['CDC_APPROVED', 'CDC_REJECTED', 'APPROVED', 'REJECTED'] } },
+        { status: { $in: ['cdc_approved', 'cdc_rejected', 'principal_pending', 'principal_approved', 'principal_rejected'] } },
+        { eligibilityStatus: { $in: ['Approved', '3 Months Approved', 'Conditionally Approved', '3 Months + 3 Months Extension', 'Rejected by CDC – Pending Principal Review', 'Rejected'] } }
       ]
+    };
+
+    const query: any = {
+      $and: [statusQuery]
     };
     
     if (branch && branch !== 'all') {
       query['studentDetails.branch'] = branch;
     }
     if (year && year !== 'all') {
-      query['studentDetails.year'] = new RegExp(String(year), 'i');
+      query['studentDetails.year'] = new RegExp(String(year) + ' Year', 'i');
     }
     if (type && type !== 'all') {
       query['internshipDetails.mode'] = type;
@@ -753,18 +882,22 @@ router.get('/forwarded', authenticate, authorize(['principal']), async (req, res
       const q = String(search).toLowerCase().trim();
       const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
       const cleanSearch = rollMatch ? rollMatch[1] : q;
-      query.$or = [
-        { 'studentDetails.name': new RegExp(cleanSearch, 'i') },
-        { 'studentDetails.rollNumber': new RegExp(cleanSearch, 'i') },
-        { rollNumber: new RegExp(cleanSearch, 'i') },
-        { studentEmail: new RegExp(cleanSearch, 'i') }
-      ];
+      query.$and.push({
+        $or: [
+          { 'studentDetails.name': new RegExp(cleanSearch, 'i') },
+          { 'studentDetails.rollNumber': new RegExp(cleanSearch, 'i') },
+          { rollNumber: new RegExp(cleanSearch, 'i') },
+          { studentEmail: new RegExp(cleanSearch, 'i') }
+        ]
+      });
     }
     
     const page = req.query.page ? parseInt(req.query.page as string) : null;
     const limit = req.query.limit ? parseInt(req.query.limit as string) : null;
     
-    let applicationsQuery = Internship.find(query).populate('studentId', 'name email');
+    console.log("Principal Fetch Query:", JSON.stringify(query, null, 2));
+
+    let applicationsQuery = Internship.find(query).populate('studentId', 'name email').sort({ createdAt: -1 });
     if (page && limit) {
       const skip = (page - 1) * limit;
       applicationsQuery = applicationsQuery.skip(skip).limit(limit);
@@ -780,23 +913,28 @@ router.get('/forwarded', authenticate, authorize(['principal']), async (req, res
       return formatInternshipForFrontend(app);
     }));
     
+    // Add debug logs
+    console.log("Principal Fetch Result:", applications.length);
+    
     res.json(populatedApps);
   } catch (error) {
     next(error);
   }
-});
+};
+router.get('/forwarded', authenticate, authorize(['principal']), getForwardedApplications);
 
 // Principal: Final Decision
-router.patch('/principal-decision/:id', authenticate, authorize(['principal']), async (req: AuthRequest, res, next) => {
+export const handlePrincipalDecision = async (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
   try {
     const { finalStatus, remarks } = req.body;
 
     const internship = await Internship.findById(req.params.id);
     if (!internship) return res.status(404).json({ message: 'Internship not found' });
 
+    const statusStr = String(finalStatus).trim().toLowerCase();
     let dbPrincipalStatus = 'PENDING';
-    if (finalStatus === 'Approved') dbPrincipalStatus = 'APPROVED';
-    else if (finalStatus === 'Rejected') dbPrincipalStatus = 'REJECTED';
+    if (statusStr === 'approved') dbPrincipalStatus = 'APPROVED';
+    else if (statusStr === 'rejected') dbPrincipalStatus = 'REJECTED';
 
     internship.finalStatus = finalStatus as any;
     internship.remarks = remarks;
@@ -810,39 +948,77 @@ router.patch('/principal-decision/:id', authenticate, authorize(['principal']), 
 
     // Map decision to principalStatus enum
     let principalStatusVal = 'Pending Review';
-    if (finalStatus === 'Approved') {
+    let timelineAction = 'Principal Review';
+    
+    let approvedMonths = internship.permissibleDuration || 0;
+    if (statusStr === 'approved') {
       principalStatusVal = 'Approved';
       internship.status = 'principal_approved';
       internship.currentStatus = 'APPROVED';
-    } else if (finalStatus === 'Rejected') {
+      timelineAction = 'Principal Approved';
+      
+      // Calculate approved months if it is currently 0 or null
+      if (!approvedMonths || approvedMonths === 0) {
+        const proposed = internship.internshipDetails.totalDuration || 0;
+        const yearSem = internship.studentDetails.year || '';
+        const is2ndYear = yearSem.includes('2nd Year');
+        const is3rdYear2ndSem = yearSem === '3rd Year – 2nd Sem';
+        
+        let limit = 6;
+        if (is2ndYear) limit = 1;
+        else if (is3rdYear2ndSem) limit = 3;
+        
+        approvedMonths = Math.min(proposed, limit);
+        if (approvedMonths === 0) approvedMonths = proposed;
+      }
+      internship.permissibleDuration = approvedMonths;
+    } else if (statusStr === 'rejected') {
       principalStatusVal = 'Rejected';
       internship.status = 'principal_rejected';
       internship.currentStatus = 'REJECTED';
+      timelineAction = 'Principal Rejected';
+      internship.permissibleDuration = 0;
     } else {
       internship.status = 'principal_pending';
       internship.currentStatus = 'PENDING';
     }
     internship.principalStatus = principalStatusVal as any;
     
-    // Clear non-student entries to keep DB timeline clean
+    // Clear legacy timeline entries of same type before pushing to keep history clean
     internship.timeline = internship.timeline.filter((t: any) => t.role === 'student') as any;
+    
+    internship.timeline.push({
+      action: timelineAction,
+      by: 'Principal',
+      timestamp: new Date(),
+      status: `Final Decision by Principal: ${finalStatus}`,
+      updatedBy: req.user?.email || 'Principal',
+      role: 'principal',
+      remarks: remarks || ''
+    } as any);
+    
     internship.markModified('timeline');
     
     await internship.save();
     console.log("Application Status:", internship.status);
 
+    // Refresh from MongoDB to get fresh document state
+    const refreshedInternship = await Internship.findById(internship._id);
+    const finalInternship = refreshedInternship || internship;
+
     // Send notification
     createSystemNotification(
-      internship.studentId.toString(),
+      finalInternship.studentId.toString(),
       'Internship Final Decision Notification',
-      `Principal has made a final decision on your internship application for ${internship.internshipDetails.companyName}. Decision: ${finalStatus}. Remarks: "${remarks || 'None'}"`,
+      `Principal has made a final decision on your internship application for ${finalInternship.internshipDetails.companyName}. Decision: ${finalStatus}. Remarks: "${remarks || 'None'}"`,
       'principal'
     ).catch(console.error);
 
-    res.json({ message: 'Principal decision updated', internship: formatInternshipForFrontend(internship) });
+    res.json({ message: 'Principal decision updated', internship: formatInternshipForFrontend(finalInternship) });
   } catch (error) {
     next(error);
   }
-});
+};
+router.patch('/principal-decision/:id', authenticate, authorize(['principal']), handlePrincipalDecision);
 
 export default router;

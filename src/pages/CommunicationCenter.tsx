@@ -1102,7 +1102,7 @@ export default function CommunicationCenter() {
                             <input
                               type="text"
                               required
-                              placeholder="e.g. 24E51A1234"
+                              placeholder="e.g. rollnumber"
                               value={composeForm.targetedRollNumber}
                               onChange={(e) => setComposeForm(prev => ({ ...prev, targetedRollNumber: e.target.value }))}
                               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none text-xs text-slate-800 font-semibold focus:border-[#78be21]"

@@ -295,6 +295,14 @@ export default function InternshipForm() {
     const to = new Date(toVal);
     if (to <= from) return 'To Date must be after From Date';
 
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const startOfFromDate = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+    const daysPrior = Math.ceil((startOfFromDate.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysPrior < 15) {
+      return 'Internship applications must be submitted at least 15 days prior to the internship start date.';
+    }
+
     const diffTime = Math.abs(to.getTime() - from.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     const diffMonths = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 30));

@@ -9,6 +9,7 @@ import exceljs from 'exceljs';
 import moment from 'moment';
 import { MonthlyReport } from '../models/MonthlyReport.ts';
 import { Internship } from '../models/Internship.ts';
+import { DbFile } from '../models/DbFile.ts';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.ts';
 import { getModuleStatusInfo } from './portalControl.ts';
 
@@ -39,6 +40,14 @@ router.post('/submit', authenticate, authorize(['student']), upload.single('repo
       }
     }
 
+    const dbFile = new DbFile({
+      filename: req.file.originalname,
+      contentType: req.file.mimetype,
+      data: req.file.buffer,
+      size: req.file.size
+    });
+    await dbFile.save();
+
     const reportData = {
       _id: new mongoose.Types.ObjectId().toString(),
       studentId: req.user?.id,
@@ -48,9 +57,9 @@ router.post('/submit', authenticate, authorize(['student']), upload.single('repo
         branch: parsedDetails.branch || 'N/A',
       },
       month: month || 'Current Month',
-      filePath: req.file?.path || '',
-      fileName: req.file?.originalname || '',
-      publicId: req.file?.filename || '',
+      filePath: `api/files/download/${dbFile._id}`,
+      fileName: req.file.originalname,
+      publicId: dbFile._id.toString(),
       status: 'Pending CDC Review',
       remarks: '',
       cdcRemarks: '',
@@ -126,7 +135,7 @@ async function fetchReportData(query: any) {
       matchStage['studentDetails.branch'] = branch;
     }
     if (semester && semester !== 'all') {
-      matchStage['studentDetails.year'] = semester;
+      matchStage['studentDetails.year'] = new RegExp(String(semester) + ' Year', 'i');
     }
     if (status && status !== 'all') {
       matchStage['status'] = status;
@@ -179,7 +188,7 @@ async function fetchReportData(query: any) {
       matchStage['studentDetails.branch'] = branch;
     }
     if (semester && semester !== 'all') {
-      matchStage['studentDetails.year'] = semester;
+      matchStage['studentDetails.year'] = new RegExp(String(semester) + ' Year', 'i');
     }
     if (status && status !== 'all') {
       matchStage['finalStatus'] = status;

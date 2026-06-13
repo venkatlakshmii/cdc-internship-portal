@@ -30,18 +30,8 @@ const getDestinationFolder = (fieldname: string) => {
   return 'uploads/messages';
 };
 
-// Configure Multer Storage for Local Disk
-export const localStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dest = getDestinationFolder(file.fieldname);
-    cb(null, dest);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
-  }
-});
+// Configure Multer Storage for Memory (to store in Database)
+export const localStorage = multer.memoryStorage();
 
 // Middleware for internship uploads: PDF, JPG, PNG
 export const uploadCloud = multer({

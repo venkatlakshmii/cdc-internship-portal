@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import mongoose from 'mongoose';
 import { InternshipCompletion } from '../models/InternshipCompletion.ts';
+import { DbFile } from '../models/DbFile.ts';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.ts';
 import { getModuleStatusInfo } from './portalControl.ts';
 
@@ -42,6 +43,25 @@ router.post('/submit', authenticate, authorize(['student']), upload.fields([
       return res.status(400).json({ message: 'Completion Date must be a valid date.' });
     }
 
+    const reportFile = files.completionReport[0];
+    const certFile = files.completionCertificate[0];
+
+    const dbReport = new DbFile({
+      filename: reportFile.originalname,
+      contentType: reportFile.mimetype,
+      data: reportFile.buffer,
+      size: reportFile.size
+    });
+    await dbReport.save();
+
+    const dbCert = new DbFile({
+      filename: certFile.originalname,
+      contentType: certFile.mimetype,
+      data: certFile.buffer,
+      size: certFile.size
+    });
+    await dbCert.save();
+
     const completionData = {
       _id: new mongoose.Types.ObjectId().toString(),
       studentId: req.user?.id,
@@ -52,12 +72,12 @@ router.post('/submit', authenticate, authorize(['student']), upload.fields([
         branch: parsedDetails.branch || 'N/A',
       },
       completionDate: completionDate ? new Date(completionDate) : new Date(),
-      reportFilePath: files?.completionReport?.[0]?.path || '',
-      reportFileName: files?.completionReport?.[0]?.originalname || '',
-      reportPublicId: files?.completionReport?.[0]?.filename || '',
-      certificateFilePath: files?.completionCertificate?.[0]?.path || '',
-      certificateFileName: files?.completionCertificate?.[0]?.originalname || '',
-      certificatePublicId: files?.completionCertificate?.[0]?.filename || '',
+      reportFilePath: `api/files/download/${dbReport._id}`,
+      reportFileName: reportFile.originalname,
+      reportPublicId: dbReport._id.toString(),
+      certificateFilePath: `api/files/download/${dbCert._id}`,
+      certificateFileName: certFile.originalname,
+      certificatePublicId: dbCert._id.toString(),
       studentRemarks: studentRemarks || '',
       status: 'Pending CDC Review',
       cdcRemarks: '',

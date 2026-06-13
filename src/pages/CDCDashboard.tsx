@@ -153,7 +153,7 @@ export default function CDCDashboard() {
     })();
 
     const matchBranch = branchFilter === 'all' || app.studentDetails?.branch === branchFilter;
-    const matchYear = yearFilter === 'all' || (app.studentDetails?.year && app.studentDetails.year.includes(yearFilter));
+    const matchYear = yearFilter === 'all' || (app.studentDetails?.year && (app.studentDetails.year.includes(yearFilter + ' Year') || app.studentDetails.year === yearFilter));
     const matchType = typeFilter === 'all' || app.internshipDetails?.mode === typeFilter;
     
     const matchDate = (() => {
@@ -392,7 +392,11 @@ export default function CDCDashboard() {
                           spfBand: app.spfBand || '',
                           cdcBand: app.cdcBand || ''
                         });
-                        setCdcRecommendation(app.cdcRecommendation || 'Approved');
+                        const initialRecommendation = 
+                          (app.cdcRecommendation === 'Approved' || app.cdcRecommendation === 'Rejected' || app.cdcRecommendation === 'Needs Clarification') 
+                          ? app.cdcRecommendation 
+                          : 'Approved';
+                        setCdcRecommendation(initialRecommendation);
                         setCdcRemarks(app.cdcRemarks || '');
                       }}
                       className="p-2 text-slate-400 hover:text-[#78be21] transition-colors"
@@ -434,7 +438,7 @@ export default function CDCDashboard() {
             
             <div className="p-8 space-y-8 max-h-[70vh] overflow-auto">
               <div className="grid grid-cols-2 gap-8">
-                {((selectedApp.studentDetails.year === '2nd' || (selectedApp.studentDetails.year && selectedApp.studentDetails.year.includes('2nd')))) && (
+                {((selectedApp.studentDetails.year === '2nd' || (selectedApp.studentDetails.year && selectedApp.studentDetails.year.includes('2nd Year')))) && (
                   <div className="col-span-2 p-3.5 bg-amber-50/80 border border-amber-200/60 rounded-xl text-amber-800 font-medium text-xs flex items-center gap-2.5 animate-pulse">
                     <AlertTriangle size={15} className="text-amber-500 shrink-0" />
                     <span><strong>2nd Year Student Restriction:</strong> Max duration is 4 weeks (28 days) and eligible only for In-House internships.</span>
@@ -443,7 +447,7 @@ export default function CDCDashboard() {
                 <div>
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Student Info</h4>
                   <p className="text-slate-900 font-bold">{selectedApp.studentDetails.name}</p>
-                  <p className="text-slate-500 text-sm">{selectedApp.studentDetails.rollNumber} | {selectedApp.studentDetails.branch}</p>
+                  <p className="text-slate-500 text-sm">{selectedApp.studentDetails.rollNumber} | {selectedApp.studentDetails.branch} | {selectedApp.studentDetails.year}</p>
                   <p className="text-slate-700 font-bold mt-2">Attendance: {selectedApp.studentDetails.attendancePercentage}%</p>
                   {selectedApp.studentDetails.cgpa !== undefined && (
                     <p className="text-slate-700 font-bold">CGPA: {Number(selectedApp.studentDetails.cgpa).toFixed(2)}</p>

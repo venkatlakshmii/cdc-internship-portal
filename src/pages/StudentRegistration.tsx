@@ -61,7 +61,7 @@ export default function StudentRegistration() {
   const contactError = formData.contactNumber && !/^\d{10}$/.test(formData.contactNumber) ? 'Invalid phone number. Please enter only 10 digits.' : '';
   const attendanceError = Number(formData.attendancePercentage) > 100 ? 'Invalid Attendance Percentage' : '';
   const cgpaError = formData.cgpa && (Number(formData.cgpa) > 10 || Number(formData.cgpa) < 0) ? 'Invalid CGPA' : '';
-  const rollNumberError = formData.rollNumber && !/^[0-9]{2}E51A[0-9A-Z]{4}$/i.test(formData.rollNumber) ? 'Invalid Roll Number format. (e.g. 24E51A1234)' : '';
+  const rollNumberError = formData.rollNumber && !/^[0-9]{2}E51A[0-9A-Z]{4}$/i.test(formData.rollNumber) ? 'Invalid Roll Number format. (e.g. rollnumber)' : '';
   const isFormInvalid = !!contactError || !!attendanceError || !!cgpaError || !!rollNumberError;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -355,7 +355,7 @@ export default function StudentRegistration() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. 24E51A1234"
+                    placeholder="e.g. rollnumber"
                     className={`w-full pl-10 pr-4 py-2.5 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-800 text-sm ${
                       rollNumberError 
                         ? 'border-red-300 focus:ring-red-200 focus:border-red-500 bg-red-50/20' 

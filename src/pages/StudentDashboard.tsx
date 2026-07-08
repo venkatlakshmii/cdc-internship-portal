@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { motion } from 'motion/react';
 import { Clock, CheckCircle2, XCircle, AlertTriangle, FileText, ExternalLink, Lock } from 'lucide-react';
+import { convertDecimalMonthsToMonthsDays } from '../utils/duration';
 
 export default function StudentDashboard() {
   let user: any = {};
@@ -265,7 +266,7 @@ export default function StudentDashboard() {
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-x-8 gap-y-2 text-sm col-span-2">
                     <div>
                       <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Duration</p>
-                      <p className="text-slate-700 font-medium">{app.internshipDetails?.totalDuration} Months</p>
+                      <p className="text-slate-700 font-medium">{app.internshipDetails?.durationDisplay || convertDecimalMonthsToMonthsDays(app.internshipDetails?.totalDuration)}</p>
                     </div>
                     <div>
                       <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Mode</p>
@@ -294,7 +295,7 @@ export default function StudentDashboard() {
                     </div>
                     <div>
                       <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Permissible Months</p>
-                      <p className="text-slate-700 font-medium">{app.principalDecision === 'Approved' ? (app.principalApprovedMonths ?? 0) : 0} Months</p>
+                      <p className="text-slate-700 font-medium">{app.principalDecision === 'Approved' ? convertDecimalMonthsToMonthsDays(app.principalApprovedMonths ?? 0) : '0 Days'}</p>
                     </div>
                   </div>
                 </div>

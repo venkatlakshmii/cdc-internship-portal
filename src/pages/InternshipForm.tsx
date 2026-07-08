@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { motion } from 'motion/react';
 import { Save, ArrowLeft, Upload, Info, User, Hash, GraduationCap, Calendar, Layers, Percent, Phone, Mail, Building, Globe, MapPin, Coins, Briefcase, Clock, Monitor, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
+import { convertDecimalMonthsToMonthsDays } from '../utils/duration';
 
 export default function InternshipForm() {
   const navigate = useNavigate();
@@ -54,6 +55,35 @@ export default function InternshipForm() {
     joiningLetter: null
   });
   const [existingProofCount, setExistingProofCount] = useState<number>(0);
+  const [durationDisplay, setDurationDisplay] = useState<string>('');
+
+  // Helper: compute exact months + remaining days and a display string
+  const computeDuration = (fromStr: string, toStr: string) => {
+    const from = new Date(fromStr);
+    const to = new Date(toStr);
+    if (to <= from) return { totalDuration: 0, display: '' };
+
+    let months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+    let days = to.getDate() - from.getDate();
+    if (days < 0) {
+      months -= 1;
+      // Days in the month before `to`
+      const daysInPrevMonth = new Date(to.getFullYear(), to.getMonth(), 0).getDate();
+      days += daysInPrevMonth;
+    }
+    months = Math.max(0, months);
+    days = Math.max(0, days);
+
+    // Build display string
+    const parts: string[] = [];
+    if (months > 0) parts.push(`${months} ${months === 1 ? 'Month' : 'Months'}`);
+    if (days > 0)   parts.push(`${days} ${days === 1 ? 'Day' : 'Days'}`);
+    const display = parts.length > 0 ? parts.join(' ') : '0 Days';
+
+    // Decimal months for eligibility comparison (accurate to day)
+    const totalDuration = parseFloat((months + days / 30).toFixed(2));
+    return { totalDuration, display, months, days };
+  };
 
   const fetchProfile = async () => {
     try {
@@ -124,6 +154,14 @@ export default function InternshipForm() {
           },
           criticalSubject: app.criticalSubject || '',
         });
+
+        // Populate duration display for existing applications
+        const fromD = app.internshipDetails?.fromDate ? app.internshipDetails.fromDate.split('T')[0] : '';
+        const toD   = app.internshipDetails?.toDate   ? app.internshipDetails.toDate.split('T')[0]   : '';
+        if (fromD && toD) {
+          const { display } = computeDuration(fromD, toD);
+          setDurationDisplay(display);
+        }
 
         if (app.attachments) {
           setExistingFiles({
@@ -256,19 +294,16 @@ export default function InternshipForm() {
       // Auto calculate duration if dates change
       if (section === 'internshipDetails' && (field === 'fromDate' || field === 'toDate')) {
         const fromVal = field === 'fromDate' ? value : prev.internshipDetails.fromDate;
-        const toVal = field === 'toDate' ? value : prev.internshipDetails.toDate;
-        
+        const toVal   = field === 'toDate'   ? value : prev.internshipDetails.toDate;
         if (fromVal && toVal) {
-          const from = new Date(fromVal);
-          const to = new Date(toVal);
-          if (to > from) {
-            const diffTime = Math.abs(to.getTime() - from.getTime());
-            const diffMonths = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 30));
-            updatedData.internshipDetails = {
-              ...updatedData.internshipDetails,
-              totalDuration: diffMonths,
-            };
-          }
+          const { totalDuration, display } = computeDuration(fromVal, toVal);
+          setDurationDisplay(display);
+          updatedData.internshipDetails = {
+            ...updatedData.internshipDetails,
+            totalDuration,
+          };
+        } else {
+          setDurationDisplay('');
         }
       }
 
@@ -303,9 +338,10 @@ export default function InternshipForm() {
       return 'Internship applications must be submitted at least 15 days prior to the internship start date.';
     }
 
-    const diffTime = Math.abs(to.getTime() - from.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const diffMonths = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 30));
+    // Use exact days for all limit checks
+    const diffDays = Math.ceil(Math.abs(to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+    const { months: exactMonths, days: exactDays } = computeDuration(fromVal, toVal);
+    const totalCalendarMonths = exactMonths + (exactDays > 0 ? 1 : 0); // ceiling months
 
     const yearSem = formData.studentDetails.year || '';
 
@@ -329,12 +365,12 @@ export default function InternshipForm() {
     }
 
     if (yearSem === '3rd Year – 2nd Sem') {
-      if (diffDays > 92 || diffMonths > 3) {
+      if (totalCalendarMonths > 3) {
         return 'Students from 3rd Year – 2nd Semester are eligible for a maximum duration of 3 months.';
       }
     }
 
-    if (diffMonths > 6) {
+    if (totalCalendarMonths > 6) {
       return 'Internships with a duration of more than 6 months are not accepted.';
     }
 
@@ -656,7 +692,7 @@ export default function InternshipForm() {
                 <div>
                   <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-0.5">Attendance</p>
                   <p className={`font-bold ${Number(formData.studentDetails.attendancePercentage) < 75 ? 'text-red-500' : 'text-emerald-600'}`}>
-                    {formData.studentDetails.attendancePercentage ? `${formData.studentDetails.attendancePercentage}%` : 'Not Provided'}
+                    {formData.studentDetails.attendancePercentage ? `${Number(formData.studentDetails.attendancePercentage).toFixed(2)}%` : 'Not Provided'}
                   </p>
                 </div>
               </div>
@@ -758,7 +794,7 @@ export default function InternshipForm() {
                 <div className="relative">
                   <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                   <input
-                    type="url"
+                    type="text"
                     placeholder="https://example.com"
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#78be21]/20 focus:border-[#78be21] outline-none transition-all text-slate-800 text-sm"
                     value={formData.internshipDetails.website}
@@ -820,16 +856,25 @@ export default function InternshipForm() {
                 </div>
               </div>
 
-              {/* Total Duration */}
+              {/* Total Duration - auto calculated, read-only */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Total Duration (Months)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
+                  Total Duration
+                </label>
                 <div className="relative">
                   <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                   <input
-                    type="number"
+                    type="text"
                     readOnly
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl outline-none text-slate-500 font-bold text-sm cursor-not-allowed"
-                    value={formData.internshipDetails.totalDuration}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl outline-none text-slate-600 font-bold text-sm cursor-not-allowed"
+                    value={
+                      durationDisplay
+                        ? durationDisplay
+                        : formData.internshipDetails.totalDuration
+                          ? convertDecimalMonthsToMonthsDays(Number(formData.internshipDetails.totalDuration))
+                          : 'Select dates above'
+                    }
+                    placeholder="Select From & To dates"
                   />
                 </div>
               </div>
@@ -933,42 +978,45 @@ export default function InternshipForm() {
             </div>
           </div>
 
-          {/* Critical Subject Section for 2nd Year students */}
-          {formData.studentDetails.year.includes('2nd Year') && (
-            <div className="p-8 space-y-6 border-t border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 bg-amber-500/10 text-amber-600 rounded-full flex items-center justify-center font-bold text-xs shrink-0">
-                  ⚠️
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm">Critical Subject Selection</h3>
-                  <p className="text-slate-500 text-[11px] mt-0.5">Mandatory for 2nd Year students during In-House Internships</p>
-                </div>
+          {/* Critical Subject Section - available to ALL students */}
+          <div className="p-8 space-y-6 border-t border-slate-100">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-amber-500/10 text-amber-600 rounded-full flex items-center justify-center font-bold text-xs shrink-0">
+                ⚡
               </div>
-
-              {/* Info alert box */}
-              <div className="p-4 bg-amber-50 border border-amber-200/60 rounded-xl flex gap-3 text-amber-800 text-xs font-semibold">
-                <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="leading-relaxed">
-                    2nd Year students may select any critical subject they wish to attend during the semester while participating in In-House Internship programs.
-                  </p>
-                </div>
-              </div>
-
-              <div className="max-w-xl">
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">Critical Subject Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Data Structures & Algorithms"
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all text-slate-800 text-sm font-semibold"
-                  value={formData.criticalSubject}
-                  onChange={(e) => handleTopLevelInputChange('criticalSubject', e.target.value)}
-                />
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">Critical Subject Selection</h3>
+                <p className="text-slate-500 text-[11px] mt-0.5">Select the subject you will attend during your internship period</p>
               </div>
             </div>
-          )}
+
+            {/* Info alert box */}
+            <div className="p-4 bg-amber-50 border border-amber-200/60 rounded-xl flex gap-3 text-amber-800 text-xs font-semibold">
+              <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="leading-relaxed">
+                  Select the critical subject you plan to attend during your internship. This helps CDC faculty and the Principal assess academic commitments alongside your internship.
+                  {formData.studentDetails.year.includes('2nd Year') && (
+                    <span className="block mt-1 text-amber-900 font-bold">⚠️ Mandatory for 2nd Year students.</span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="max-w-xl">
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wide">
+                Critical Subject {formData.studentDetails.year.includes('2nd Year') && <span className="text-red-500">*</span>}
+              </label>
+              <input
+                type="text"
+                required={formData.studentDetails.year.includes('2nd Year')}
+                placeholder="e.g. Data Structures & Algorithms"
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all text-slate-800 text-sm font-semibold"
+                value={formData.criticalSubject}
+                onChange={(e) => handleTopLevelInputChange('criticalSubject', e.target.value)}
+              />
+            </div>
+          </div>
 
           {/* Section C: SPOC Details */}
           <div className="p-8 space-y-6">

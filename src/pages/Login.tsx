@@ -125,9 +125,9 @@ export default function Login() {
     setError('');
 
     const emailStr = getFullEmail(registerEmailPrefix);
-    const hitamEmailRegex = /^[0-9]{2}e51a[0-9a-z]{4}@hitam\.org$/;
+    const hitamEmailRegex = /^[a-z0-9]{10}@hitam\.org$/;
     if (!hitamEmailRegex.test(emailStr)) {
-      setError('Invalid student email format. Must follow official format (e.g. rollnumber@hitam.org).');
+      setError('Invalid student email format. The roll number must consist of exactly 10 characters (can be numbers, letters, or alphanumeric) followed by @hitam.org.');
       setLoading(false);
       return;
     }
@@ -181,9 +181,9 @@ export default function Login() {
     setError('');
 
     const emailStr = resetEmail.toLowerCase().trim();
-    const hitamEmailRegex = /^[0-9]{2}e51a[0-9a-z]{4}@hitam\.org$/;
+    const hitamEmailRegex = /^[a-z0-9]{10}@hitam\.org$/;
     if (!hitamEmailRegex.test(emailStr)) {
-      setError('Invalid student email format. Must follow official format (e.g. rollnumber@hitam.org).');
+      setError('Invalid student email format. The roll number must consist of exactly 10 characters (can be numbers, letters, or alphanumeric) followed by @hitam.org.');
       setLoading(false);
       return;
     }
@@ -411,7 +411,10 @@ export default function Login() {
                     readOnly={false}
                     placeholder="rollnumber"
                   />
-                  <p className="mt-1.5 text-xs text-slate-400">
+                  <p className="mt-1.5 text-xs text-[#78be21] font-semibold">
+                    * Roll number must consist of exactly 10 characters (can be all numbers, alphabets, or alphanumeric).
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
                     Full address: <span className="font-medium text-slate-500">
                       {(registerEmailPrefix || '......') + '@hitam.org'}
                     </span>

@@ -57,7 +57,7 @@ export default function MonthlyReports() {
     } else {
       fetchAllReports();
     }
-  }, [role]);
+  }, [role, statusFilter, branchFilter, startDate, endDate, search]);
 
   const fetchStudentProfile = async () => {
     try {
@@ -90,6 +90,13 @@ export default function MonthlyReports() {
       const token = localStorage.getItem('token');
       const response = await axios.get('/api/reports/all', {
         headers: { Authorization: `Bearer ${token}` },
+        params: {
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+          branch: branchFilter !== 'all' ? branchFilter : undefined,
+          search: search || undefined,
+        }
       });
       setReports(response.data);
     } catch (err) {
@@ -243,7 +250,7 @@ export default function MonthlyReports() {
     const studentName = r.studentDetails?.name || '';
     const rollNo = r.studentDetails?.rollNumber || '';
     const q = search.toLowerCase().trim();
-    const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+    const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
     const cleanSearch = rollMatch ? rollMatch[1] : q;
     const matchSearch = studentName.toLowerCase().includes(cleanSearch) || 
                         rollNo.toLowerCase().includes(cleanSearch);
@@ -581,6 +588,7 @@ export default function MonthlyReports() {
             {/* Sub-toolbar: Date Inputs & Print/Export Buttons */}
             <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-3 border-t border-slate-100">
               <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs font-bold text-slate-600">
+                <span className="text-slate-400 text-[10px] uppercase tracking-widest">Submission Date:</span>
                 <div className="flex items-center gap-2">
                   <span>From:</span>
                   <input

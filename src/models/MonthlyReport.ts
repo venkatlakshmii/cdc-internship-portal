@@ -21,4 +21,8 @@ const MonthlyReportSchema = new mongoose.Schema({
   remarks: { type: String, default: '' },
 }, { timestamps: true });
 
+MonthlyReportSchema.index({ studentId: 1 });
+MonthlyReportSchema.index({ status: 1 });
+MonthlyReportSchema.index({ 'studentDetails.rollNumber': 1 });
+
 export const MonthlyReport = mongoose.model('MonthlyReport', MonthlyReportSchema);

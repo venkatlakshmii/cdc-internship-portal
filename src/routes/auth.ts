@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import { User } from '../models/User.ts';
 import { authenticate, AuthRequest } from '../middleware/auth.ts';
 
@@ -24,14 +25,16 @@ router.post('/register', async (req, res) => {
     }
 
     const emailStr = email.toLowerCase().trim();
-    const hitamEmailRegex = /^[0-9]{2}e51a[0-9a-z]{4}@hitam\.org$/;
+    const hitamEmailRegex = /^[a-z0-9]{10}@hitam\.org$/;
     if (!hitamEmailRegex.test(emailStr)) {
-      return res.status(400).json({ message: 'Email must follow the official student format ending in @hitam.org (e.g. rollnumber@hitam.org)' });
+      return res.status(400).json({ message: 'Email must follow the official student format ending in @hitam.org (roll number must be exactly 10 characters, which can be all numbers, all letters, or alphanumeric).' });
     }
 
     if (emailStr === 'cdc@hitam.org' || emailStr === 'principal@hitam.org') {
       return res.status(400).json({ message: 'Invalid email address for student registration' });
     }
+
+    const passwordHashSha256 = crypto.createHash('sha256').update(password).digest('hex');
 
     // In-memory Fallback checks
     if (mongoose.connection.readyState !== 1) {
@@ -40,14 +43,9 @@ router.post('/register', async (req, res) => {
         return res.status(400).json({ message: 'User already exists' });
       }
 
-      // Check unique password in memory (and against standard fallback password)
-      for (const student of memoryUsers.filter(u => u.role === 'student')) {
-        const isMatch = await bcrypt.compare(password, student.password);
-        if (isMatch) {
-          return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
-        }
-      }
-      if (password === 'password123') {
+      // Check unique password in memory (using fast sha256)
+      const isPasswordExists = memoryUsers.some(u => u.role === 'student' && u.passwordHashSha256 === passwordHashSha256);
+      if (isPasswordExists || password === 'password123') {
         return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
       }
 
@@ -57,6 +55,7 @@ router.post('/register', async (req, res) => {
         name,
         email: emailStr,
         password: hashedPassword,
+        passwordHashSha256,
         role: 'student',
         profileRegistered: false
       };
@@ -69,10 +68,15 @@ router.post('/register', async (req, res) => {
     const existingUser = await User.findOne({ email: emailStr });
     if (existingUser) return res.status(400).json({ message: 'User already exists' });
 
-    // Passwords must be unique for each account. If a password already exists for another student account,
-    // display an “Invalid Password – Password Already Exists” validation message.
-    const studentUsers = await User.find({ role: 'student' });
-    for (const student of studentUsers) {
+    // Optimized check using indexed SHA-256 password hash field
+    const duplicatePasswordUser = await User.findOne({ role: 'student', passwordHashSha256 });
+    if (duplicatePasswordUser) {
+      return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
+    }
+
+    // Fallback/Safety: check any legacy users that do not have passwordHashSha256 yet
+    const legacyStudentUsers = await User.find({ role: 'student', passwordHashSha256: { $exists: false } });
+    for (const student of legacyStudentUsers) {
       const isMatch = await bcrypt.compare(password, student.password);
       if (isMatch) {
         return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
@@ -85,6 +89,7 @@ router.post('/register', async (req, res) => {
       name, 
       email: emailStr, 
       password: hashedPassword, 
+      passwordHashSha256,
       role: 'student',
       rollNumber,
       profileRegistered: false
@@ -127,6 +132,8 @@ router.post('/login', async (req, res) => {
           }
         }
         if (isMatch) {
+          const passwordHashSha256 = crypto.createHash('sha256').update(password).digest('hex');
+          memUser.passwordHashSha256 = passwordHashSha256;
           console.log(`[LOGIN SUCCESS] Memory user found: ${email}`);
           const accessToken = jwt.sign({ id: memUser._id, role: memUser.role, email: memUser.email }, JWT_SECRET, { expiresIn: '1d' });
           const refreshToken = jwt.sign({ id: memUser._id, role: memUser.role, email: memUser.email }, JWT_SECRET, { expiresIn: '7d' });
@@ -143,8 +150,6 @@ router.post('/login', async (req, res) => {
         { name: 'Student User', email: '24E51A6665@hitam.org', password: 'password123', role: 'student' },
         { name: 'CDC Faculty', email: 'cdc@hitam.org', password: 'password123', role: 'cdc' },
         { name: 'Principal', email: 'principal@hitam.org', password: 'password123', role: 'principal' },
-        { name: 'Head of Department', email: 'hod@hitam.org', password: 'password123', role: 'hod' },
-        { name: 'Dean Careers', email: 'dean@hitam.org', password: 'password123', role: 'dean' },
       ];
       
       const fallbackUser = fallbackUsers.find(u => u.email.toLowerCase() === email?.trim().toLowerCase() && u.password === password);
@@ -190,15 +195,31 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Invalid password' });
     }
 
+    // Populate SHA-256 for the logged-in user if missing or migrating
+    const passwordHashSha256 = crypto.createHash('sha256').update(password).digest('hex');
+    let shouldSave = false;
+
     if (needsMigration) {
       console.log(`[AUTH MIGRATION] Migrating plaintext password to bcrypt hash for user: ${user.email}`);
       try {
         const hashedPassword = await bcrypt.hash(password, 12);
         user.password = hashedPassword;
-        await user.save();
-        console.log(`[AUTH MIGRATION SUCCESS] Migrated password for user: ${user.email}`);
+        user.passwordHashSha256 = passwordHashSha256;
+        shouldSave = true;
       } catch (migrationErr) {
         console.error(`[AUTH MIGRATION ERROR] Failed to save hashed password for user: ${user.email}`, migrationErr);
+      }
+    } else if (!user.passwordHashSha256) {
+      user.passwordHashSha256 = passwordHashSha256;
+      shouldSave = true;
+    }
+
+    if (shouldSave) {
+      try {
+        await user.save();
+        console.log(`[AUTH INDEX POPULATED] Populated passwordHashSha256 for user: ${user.email}`);
+      } catch (saveErr) {
+        console.error(`[AUTH INDEX ERROR] Failed to save passwordHashSha256 for user: ${user.email}`, saveErr);
       }
     }
 
@@ -277,7 +298,7 @@ router.post('/profile', authenticate, async (req: AuthRequest, res) => {
         memUser.branch = branch;
         memUser.year = year;
         memUser.section = section;
-        memUser.attendancePercentage = Number(attendancePercentage);
+        memUser.attendancePercentage = Math.round(Number(attendancePercentage) * 100) / 100;
         memUser.cgpa = Number(cgpa);
         memUser.contactNumber = contactNumber;
         memUser.personalEmail = personalEmail;
@@ -298,7 +319,7 @@ router.post('/profile', authenticate, async (req: AuthRequest, res) => {
     user.branch = branch;
     user.year = year;
     user.section = section;
-    user.attendancePercentage = Number(attendancePercentage);
+    user.attendancePercentage = Math.round(Number(attendancePercentage) * 100) / 100;
     user.cgpa = Number(cgpa);
     user.contactNumber = contactNumber;
     user.personalEmail = personalEmail;
@@ -358,24 +379,22 @@ router.post('/forgot-password/reset', async (req, res) => {
 
     const emailStr = email.toLowerCase().trim();
 
+    const newPasswordHashSha256 = crypto.createHash('sha256').update(newPassword).digest('hex');
+
     if (mongoose.connection.readyState !== 1) {
       // Fallback checks
       const existsIndex = memoryUsers.findIndex(u => u.email === emailStr);
       
-      // In-memory uniqueness check
-      for (const student of memoryUsers.filter(u => u.role === 'student' && u.email !== emailStr)) {
-        const isMatch = await bcrypt.compare(newPassword, student.password);
-        if (isMatch) {
-          return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
-        }
-      }
-      if (newPassword === 'password123') {
+      // In-memory uniqueness check using sha256
+      const isPasswordExists = memoryUsers.some(u => u.role === 'student' && u.email !== emailStr && u.passwordHashSha256 === newPasswordHashSha256);
+      if (isPasswordExists || newPassword === 'password123') {
         return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
       }
 
       const hashedPassword = await bcrypt.hash(newPassword, 12);
       if (existsIndex !== -1) {
         memoryUsers[existsIndex].password = hashedPassword;
+        memoryUsers[existsIndex].passwordHashSha256 = newPasswordHashSha256;
       } else {
         // Seeded default student in-memory setup
         const newUser = {
@@ -383,6 +402,7 @@ router.post('/forgot-password/reset', async (req, res) => {
           name: 'Student User',
           email: emailStr,
           password: hashedPassword,
+          passwordHashSha256: newPasswordHashSha256,
           role: 'student',
           profileRegistered: false
         };
@@ -393,9 +413,23 @@ router.post('/forgot-password/reset', async (req, res) => {
       return res.json({ message: 'Password reset successfully.' });
     }
 
-    // DB uniqueness check
-    const studentUsers = await User.find({ role: 'student', email: { $ne: emailStr } });
-    for (const student of studentUsers) {
+    // DB uniqueness check using indexed SHA-256 field
+    const duplicatePasswordUser = await User.findOne({
+      role: 'student',
+      email: { $ne: emailStr },
+      passwordHashSha256: newPasswordHashSha256
+    });
+    if (duplicatePasswordUser) {
+      return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
+    }
+
+    // Fallback check for legacy accounts that don't have passwordHashSha256
+    const legacyStudentUsers = await User.find({
+      role: 'student',
+      email: { $ne: emailStr },
+      passwordHashSha256: { $exists: false }
+    });
+    for (const student of legacyStudentUsers) {
       const isMatch = await bcrypt.compare(newPassword, student.password);
       if (isMatch) {
         return res.status(400).json({ message: 'Invalid Password – Password Already Exists' });
@@ -405,7 +439,7 @@ router.post('/forgot-password/reset', async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, 12);
     const user = await User.findOneAndUpdate(
       { email: emailStr, role: 'student' },
-      { password: hashedPassword },
+      { password: hashedPassword, passwordHashSha256: newPasswordHashSha256 },
       { new: true }
     );
 

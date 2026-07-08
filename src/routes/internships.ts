@@ -7,6 +7,7 @@ import { Internship } from '../models/Internship.ts';
 import { DbFile } from '../models/DbFile.ts';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.ts';
 import { calculateEligibility } from '../utils/eligibility.ts';
+import { getFormattedDuration } from '../utils/duration.ts';
 import { getModuleStatusInfo, memoryAcademicCalendar } from './portalControl.ts';
 import { AcademicCalendar } from '../models/AcademicCalendar.ts';
 import { User } from '../models/User.ts';
@@ -84,6 +85,14 @@ function formatInternshipForFrontend(app: any) {
   if (!app) return app;
   const appObj = typeof app.toObject === 'function' ? app.toObject() : { ...app };
   
+  if (appObj.internshipDetails) {
+    appObj.internshipDetails.durationDisplay = getFormattedDuration(
+      appObj.internshipDetails.fromDate,
+      appObj.internshipDetails.toDate,
+      appObj.internshipDetails.totalDuration
+    );
+  }
+  
   // Format cdcRecommendation
   let cdcStatus = 'PENDING';
   let cdcRemarksVal = appObj.cdcRemarks || '';
@@ -97,12 +106,12 @@ function formatInternshipForFrontend(app: any) {
     cdcReviewedAtVal = appObj.cdcRecommendation.reviewedAt || cdcReviewedAtVal;
   }
   
-  if (cdcStatus === 'APPROVED' || cdcStatus === 'APPROVED_BY_CDC' || appObj.currentStatus === 'CDC_APPROVED' || appObj.status === 'cdc_approved') {
-    appObj.cdcRecommendation = 'Approved';
-  } else if (cdcStatus === 'REJECTED') {
-    appObj.cdcRecommendation = 'Rejected';
-  } else if (cdcStatus === 'CLARIFICATION_REQUIRED' || cdcStatus === 'NEEDS CLARIFICATION' || cdcStatus === 'NEEDS_CLARIFICATION') {
-    appObj.cdcRecommendation = 'Needs Clarification';
+  if (cdcStatus === 'RECOMMENDED' || cdcStatus === 'APPROVED' || cdcStatus === 'APPROVED_BY_CDC' || appObj.currentStatus === 'CDC_APPROVED' || appObj.status === 'cdc_approved') {
+    appObj.cdcRecommendation = 'Recommended';
+  } else if (cdcStatus === 'NOT_RECOMMENDED' || cdcStatus === 'REJECTED') {
+    appObj.cdcRecommendation = 'Not Recommended';
+  } else if (cdcStatus === 'CLARIFICATION_REQUIRED' || cdcStatus === 'NEEDS CLARIFICATION' || cdcStatus === 'NEEDS_CLARIFICATION' || cdcStatus === 'NEED_CLARIFICATION' || cdcStatus === 'NEED CLARIFICATION') {
+    appObj.cdcRecommendation = 'Need Clarification';
   } else {
     appObj.cdcRecommendation = 'Pending';
   }
@@ -219,7 +228,8 @@ router.post('/submit', authenticate, authorize(['student']), upload.fields([
     }
 
     const files = req.files as any;
-    const attendance = Number(body.studentDetails.attendancePercentage || 0);
+    const attendance = Math.round(Number(body.studentDetails.attendancePercentage || 0) * 100) / 100;
+    body.studentDetails.attendancePercentage = attendance;
     const proposedDuration = Number(body.internshipDetails.totalDuration || 0);
 
     if (proposedDuration > 6) {
@@ -511,7 +521,8 @@ router.put('/update/:id', authenticate, authorize(['student']), upload.fields([
     }
 
     const files = req.files as any;
-    const attendance = Number(body.studentDetails.attendancePercentage || 0);
+    const attendance = Math.round(Number(body.studentDetails.attendancePercentage || 0) * 100) / 100;
+    body.studentDetails.attendancePercentage = attendance;
     const yearSem = body.studentDetails.year || '';
     const is2ndYear = yearSem.includes('2nd Year');
     const is3rdYear1stSem = yearSem === '3rd Year – 1st Sem';
@@ -670,13 +681,16 @@ export const getAllApplications = async (req: AuthRequest, res: express.Response
       query['internshipDetails.mode'] = type;
     }
     
+    // Date filter on submission date (createdAt), not internship start date
     if (startDate || endDate) {
-      query['internshipDetails.fromDate'] = {};
+      query['createdAt'] = {};
       if (startDate) {
-        query['internshipDetails.fromDate'].$gte = new Date(String(startDate));
+        const [year, month, day] = String(startDate).split('-').map(Number);
+        query['createdAt'].$gte = new Date(year, month - 1, day, 0, 0, 0, 0);
       }
       if (endDate) {
-        query['internshipDetails.fromDate'].$lte = new Date(String(endDate));
+        const [year, month, day] = String(endDate).split('-').map(Number);
+        query['createdAt'].$lte = new Date(year, month - 1, day, 23, 59, 59, 999);
       }
     }
     
@@ -695,7 +709,7 @@ export const getAllApplications = async (req: AuthRequest, res: express.Response
     
     if (search) {
       const q = String(search).toLowerCase().trim();
-      const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+      const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
       const cleanSearch = rollMatch ? rollMatch[1] : q;
       query.$or = [
         { 'studentDetails.name': new RegExp(cleanSearch, 'i') },
@@ -727,12 +741,31 @@ router.get('/all', authenticate, authorize(['cdc']), getAllApplications);
 // CDC: Update Bands and Eligibility
 export const handleCdcReview = async (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
   try {
-    const { spfBand, cdcBand, cdcRecommendation, cdcRemarks, action } = req.body;
+    const { spfBand, cdcBand, cdcRecommendation, cdcRemarks, action, verifiedAttendancePercentage } = req.body;
     const rec = cdcRecommendation || (action === 'reject' ? 'Rejected' : 'Approved');
     const rems = cdcRemarks || (action === 'reject' ? 'Rejected by CDC' : '');
 
     const internship = await Internship.findById(req.params.id);
     if (!internship) return res.status(404).json({ message: 'Internship not found' });
+
+    const studentAttendance = Number(internship.studentDetails.attendancePercentage || 0);
+    const verifiedAttendance = verifiedAttendancePercentage !== undefined ? Number(verifiedAttendancePercentage) : studentAttendance;
+
+    const studentPct = Number(studentAttendance.toFixed(2));
+    const verifiedPct = Number(verifiedAttendance.toFixed(2));
+    const attendanceMatches = (studentPct === verifiedPct);
+
+    internship.verifiedAttendancePercentage = verifiedPct;
+    internship.isAttendanceVerified = attendanceMatches;
+
+    if (!attendanceMatches) {
+      await createSystemNotification(
+        internship.studentId.toString(),
+        'Attendance Verification Discrepancy',
+        'Your attendance has not been verified. Please visit the department and discuss the discrepancy.',
+        'cdc'
+      ).catch(console.error);
+    }
 
     let finalEligibility = 'Pending CDC Review';
     let finalSpf = spfBand || 'A';
@@ -740,13 +773,13 @@ export const handleCdcReview = async (req: AuthRequest, res: express.Response, n
     let permDuration = 0;
 
     const recStr = String(rec).trim().toLowerCase();
-    if (recStr === 'rejected') {
-      finalEligibility = 'Rejected by CDC – Pending Principal Review';
-    } else if (recStr === 'needs clarification' || recStr === 'clarification') {
+    if (recStr === 'not recommended') {
+      finalEligibility = 'Not Recommended by CDC – Pending Principal Review';
+    } else if (recStr === 'need clarification' || recStr === 'clarification') {
       finalEligibility = 'Clarification Required by CDC';
     } else {
       const result = calculateEligibility(
-        internship.studentDetails.attendancePercentage,
+        verifiedPct,
         spfBand || 'A',
         cdcBand || 'A',
         internship.internshipDetails.totalDuration || 0,
@@ -765,24 +798,32 @@ export const handleCdcReview = async (req: AuthRequest, res: express.Response, n
     let cdcStatusVal = 'Pending';
     let timelineAction = 'CDC Action';
     
-    if (recStr === 'approved') {
-      dbCdcStatus = 'APPROVED';
-      cdcStatusVal = 'Approved';
+    if (recStr === 'recommended') {
+      dbCdcStatus = 'RECOMMENDED';
+      cdcStatusVal = 'Recommended';
       internship.status = 'cdc_approved';
       internship.currentStatus = 'CDC_APPROVED';
       internship.principalDecision = { status: 'PENDING', remarks: '' };
-      timelineAction = 'CDC Approved';
-    } else if (recStr === 'rejected') {
-      dbCdcStatus = 'REJECTED';
-      cdcStatusVal = 'Rejected';
+      internship.principalStatus = 'Pending Review' as any;
+      internship.finalStatus = 'Pending Principal Approval' as any;
+      timelineAction = 'CDC Recommended';
+    } else if (recStr === 'not recommended') {
+      dbCdcStatus = 'NOT_RECOMMENDED';
+      cdcStatusVal = 'Not Recommended';
       internship.status = 'cdc_rejected';
       internship.currentStatus = 'CDC_REJECTED';
-      timelineAction = 'CDC Rejected';
-    } else if (recStr === 'needs clarification' || recStr === 'clarification') {
+      internship.principalDecision = { status: 'PENDING', remarks: '' };
+      internship.principalStatus = 'Pending Review' as any;
+      internship.finalStatus = 'Pending Principal Approval' as any;
+      timelineAction = 'CDC Not Recommended';
+    } else if (recStr === 'need clarification' || recStr === 'clarification') {
       dbCdcStatus = 'CLARIFICATION_REQUIRED';
-      cdcStatusVal = 'Needs Clarification';
+      cdcStatusVal = 'Need Clarification';
       internship.status = 'clarification';
       internship.currentStatus = 'CLARIFICATION_REQUIRED';
+      internship.principalDecision = { status: 'PENDING', remarks: '' };
+      internship.principalStatus = 'Pending Review' as any;
+      internship.finalStatus = 'Pending Principal Approval' as any;
       timelineAction = 'Clarification Requested by CDC';
     }
     
@@ -843,14 +884,11 @@ export const getForwardedApplications = async (req: AuthRequest, res: express.Re
   try {
     const { search, branch, year, type, startDate, endDate } = req.query;
     
-    // Status conditions for forwarded applications
+    // Status conditions for forwarded applications (all reviewed applications)
     const statusQuery = {
-      $or: [
-        { 'cdcRecommendation.status': { $in: ['APPROVED', 'Approved', 'REJECTED', 'Rejected'] } },
-        { cdcRecommendation: { $in: ['APPROVED', 'Approved', 'REJECTED', 'Rejected'] } },
-        { currentStatus: { $in: ['CDC_APPROVED', 'CDC_REJECTED', 'APPROVED', 'REJECTED'] } },
-        { status: { $in: ['cdc_approved', 'cdc_rejected', 'principal_pending', 'principal_approved', 'principal_rejected'] } },
-        { eligibilityStatus: { $in: ['Approved', '3 Months Approved', 'Conditionally Approved', '3 Months + 3 Months Extension', 'Rejected by CDC – Pending Principal Review', 'Rejected'] } }
+      $and: [
+        { 'cdcRecommendation.status': { $ne: 'PENDING' } },
+        { cdcRecommendation: { $ne: 'PENDING' } }
       ]
     };
 
@@ -868,19 +906,22 @@ export const getForwardedApplications = async (req: AuthRequest, res: express.Re
       query['internshipDetails.mode'] = type;
     }
     
+    // Date filter on submission date (createdAt), not internship start date
     if (startDate || endDate) {
-      query['internshipDetails.fromDate'] = {};
+      query['createdAt'] = {};
       if (startDate) {
-        query['internshipDetails.fromDate'].$gte = new Date(String(startDate));
+        const [year, month, day] = String(startDate).split('-').map(Number);
+        query['createdAt'].$gte = new Date(year, month - 1, day, 0, 0, 0, 0);
       }
       if (endDate) {
-        query['internshipDetails.fromDate'].$lte = new Date(String(endDate));
+        const [year, month, day] = String(endDate).split('-').map(Number);
+        query['createdAt'].$lte = new Date(year, month - 1, day, 23, 59, 59, 999);
       }
     }
     
     if (search) {
       const q = String(search).toLowerCase().trim();
-      const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+      const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
       const cleanSearch = rollMatch ? rollMatch[1] : q;
       query.$and.push({
         $or: [
@@ -944,7 +985,8 @@ export const handlePrincipalDecision = async (req: AuthRequest, res: express.Res
       reviewedAt: new Date()
     };
     internship.principalRemarks = remarks;
-    internship.eligibilityStatus = finalStatus as any;
+    // NOTE: eligibilityStatus is NOT updated here — it holds the CDC-computed eligibility,
+    // not the principal's decision. Principal decision is stored in finalStatus + principalStatus.
 
     // Map decision to principalStatus enum
     let principalStatusVal = 'Pending Review';

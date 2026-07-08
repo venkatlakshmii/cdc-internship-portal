@@ -71,7 +71,7 @@ export default function Layout() {
             <Link
               to="/messages"
               className={`flex items-center justify-between px-3 py-2 rounded-lg transition-all font-medium text-sm ${
-                location.pathname === '/messages' || location.pathname === '/hod' || location.pathname === '/dean'
+                location.pathname === '/messages' || location.pathname === '/hod'
                   ? 'bg-slate-50 text-[#78be21] font-bold'
                   : 'text-slate-600 hover:bg-slate-50 hover:text-[#78be21]'
               }`}

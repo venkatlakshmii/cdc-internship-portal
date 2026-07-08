@@ -22,11 +22,11 @@ export default defineConfig(({mode}) => {
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
         '/api': {
-          target: 'http://localhost:3000',
+          target: `http://localhost:${process.env.PORT || '3000'}`,
           changeOrigin: true,
         },
         '/uploads': {
-          target: 'http://localhost:3000',
+          target: `http://localhost:${process.env.PORT || '3000'}`,
           changeOrigin: true,
         },
       },

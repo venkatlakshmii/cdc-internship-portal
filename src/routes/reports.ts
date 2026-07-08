@@ -12,6 +12,7 @@ import { Internship } from '../models/Internship.ts';
 import { DbFile } from '../models/DbFile.ts';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.ts';
 import { getModuleStatusInfo } from './portalControl.ts';
+import { getFormattedDuration } from '../utils/duration.ts';
 
 const router = express.Router();
 
@@ -86,10 +87,42 @@ router.get('/my-reports', authenticate, authorize(['student']), async (req: Auth
   }
 });
 
-// CDC / Principal: Get All Reports (For review & monitoring)
+// CDC / Principal: Get All Reports (For review & monitoring) — supports filters
 router.get('/all', authenticate, authorize(['cdc', 'principal']), async (req: AuthRequest, res, next) => {
   try {
-    const reports = await MonthlyReport.find().sort({ createdAt: -1 });
+    const { startDate, endDate, status, branch, search } = req.query;
+    const query: any = {};
+
+    if (branch && branch !== 'all') {
+      query['studentDetails.branch'] = branch;
+    }
+    if (status && status !== 'all') {
+      query['status'] = status;
+    }
+    // Date filter on submission date (createdAt)
+    if (startDate || endDate) {
+      query['createdAt'] = {};
+      if (startDate) {
+        const [year, month, day] = String(startDate).split('-').map(Number);
+        query['createdAt'].$gte = new Date(year, month - 1, day, 0, 0, 0, 0);
+      }
+      if (endDate) {
+        const [year, month, day] = String(endDate).split('-').map(Number);
+        query['createdAt'].$lte = new Date(year, month - 1, day, 23, 59, 59, 999);
+      }
+    }
+    if (search) {
+      const q = String(search).toLowerCase().trim();
+      const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
+      const cleanSearch = rollMatch ? rollMatch[1] : q;
+      query['$or'] = [
+        { 'studentDetails.name': new RegExp(cleanSearch, 'i') },
+        { 'studentDetails.rollNumber': new RegExp(cleanSearch, 'i') },
+        { 'studentDetails.branch': new RegExp(cleanSearch, 'i') }
+      ];
+    }
+
+    const reports = await MonthlyReport.find(query).sort({ createdAt: -1 });
     res.json(reports);
   } catch (error) {
     next(error);
@@ -140,14 +173,21 @@ async function fetchReportData(query: any) {
     if (status && status !== 'all') {
       matchStage['status'] = status;
     }
+    // Filter by completionDate, not submission/upload date
     if (startDate || endDate) {
       matchStage['completionDate'] = {};
-      if (startDate) matchStage['completionDate'].$gte = new Date(startDate);
-      if (endDate) matchStage['completionDate'].$lte = new Date(endDate);
+      if (startDate) {
+        const [year, month, day] = String(startDate).split('-').map(Number);
+        matchStage['completionDate'].$gte = new Date(year, month - 1, day, 0, 0, 0, 0);
+      }
+      if (endDate) {
+        const [year, month, day] = String(endDate).split('-').map(Number);
+        matchStage['completionDate'].$lte = new Date(year, month - 1, day, 23, 59, 59, 999);
+      }
     }
     if (search) {
       const q = String(search).toLowerCase().trim();
-      const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+      const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
       const cleanSearch = rollMatch ? rollMatch[1] : q;
       matchStage['$or'] = [
         { 'studentDetails.name': new RegExp(cleanSearch, 'i') },
@@ -161,8 +201,21 @@ async function fetchReportData(query: any) {
       {
         $lookup: {
           from: 'internships',
-          localField: 'studentDetails.rollNumber',
-          foreignField: 'studentDetails.rollNumber',
+          let: { roll: '$studentDetails.rollNumber' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$studentDetails.rollNumber', '$$roll'] },
+                    { $eq: ['$finalStatus', 'Approved'] }
+                  ]
+                }
+              }
+            },
+            { $sort: { createdAt: -1 } },
+            { $limit: 1 }
+          ],
           as: 'internship'
         }
       },
@@ -196,14 +249,21 @@ async function fetchReportData(query: any) {
     if (type && type !== 'all') {
       matchStage['internshipDetails.mode'] = type;
     }
+    // Filter by submission date (createdAt), not internship start date
     if (startDate || endDate) {
-      matchStage['internshipDetails.fromDate'] = {};
-      if (startDate) matchStage['internshipDetails.fromDate'].$gte = new Date(startDate);
-      if (endDate) matchStage['internshipDetails.fromDate'].$lte = new Date(endDate);
+      matchStage['createdAt'] = {};
+      if (startDate) {
+        const [year, month, day] = String(startDate).split('-').map(Number);
+        matchStage['createdAt'].$gte = new Date(year, month - 1, day, 0, 0, 0, 0);
+      }
+      if (endDate) {
+        const [year, month, day] = String(endDate).split('-').map(Number);
+        matchStage['createdAt'].$lte = new Date(year, month - 1, day, 23, 59, 59, 999);
+      }
     }
     if (search) {
       const q = String(search).toLowerCase().trim();
-      const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+      const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
       const cleanSearch = rollMatch ? rollMatch[1] : q;
       matchStage['$or'] = [
         { 'studentDetails.name': new RegExp(cleanSearch, 'i') },
@@ -222,14 +282,21 @@ async function fetchReportData(query: any) {
     if (status && status !== 'all') {
       matchStage['status'] = status;
     }
+    // Filter by upload date (createdAt)
     if (startDate || endDate) {
       matchStage['createdAt'] = {};
-      if (startDate) matchStage['createdAt'].$gte = new Date(startDate);
-      if (endDate) matchStage['createdAt'].$lte = new Date(endDate);
+      if (startDate) {
+        const [year, month, day] = String(startDate).split('-').map(Number);
+        matchStage['createdAt'].$gte = new Date(year, month - 1, day, 0, 0, 0, 0);
+      }
+      if (endDate) {
+        const [year, month, day] = String(endDate).split('-').map(Number);
+        matchStage['createdAt'].$lte = new Date(year, month - 1, day, 23, 59, 59, 999);
+      }
     }
     if (search) {
       const q = String(search).toLowerCase().trim();
-      const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+      const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
       const cleanSearch = rollMatch ? rollMatch[1] : q;
       matchStage['$or'] = [
         { 'studentDetails.name': new RegExp(cleanSearch, 'i') },
@@ -279,7 +346,7 @@ router.get('/export-excel', authenticate, authorize(['cdc', 'principal']), async
         item.internship?.internshipDetails?.mode || 'N/A',
         item.internship?.internshipDetails?.fromDate ? moment(item.internship.internshipDetails.fromDate).format('YYYY-MM-DD') : 'N/A',
         item.internship?.internshipDetails?.toDate ? moment(item.internship.internshipDetails.toDate).format('YYYY-MM-DD') : 'N/A',
-        item.internship?.internshipDetails?.totalDuration ? `${item.internship.internshipDetails.totalDuration} Months` : 'N/A',
+        getFormattedDuration(item.internship?.internshipDetails?.fromDate, item.internship?.internshipDetails?.toDate, item.internship?.internshipDetails?.totalDuration) || 'N/A',
         item.completionDate ? moment(item.completionDate).format('YYYY-MM-DD') : 'N/A',
         item.status || ''
       ]);
@@ -299,7 +366,7 @@ router.get('/export-excel', authenticate, authorize(['cdc', 'principal']), async
         item.internshipDetails?.mode || '',
         item.internshipDetails?.fromDate ? moment(item.internshipDetails.fromDate).format('YYYY-MM-DD') : '',
         item.internshipDetails?.toDate ? moment(item.internshipDetails.toDate).format('YYYY-MM-DD') : '',
-        item.internshipDetails?.totalDuration ? `${item.internshipDetails.totalDuration} Months` : '',
+        getFormattedDuration(item.internshipDetails?.fromDate, item.internshipDetails?.toDate, item.internshipDetails?.totalDuration),
         item.eligibilityStatus || '',
         item.finalStatus || ''
       ]);
@@ -422,7 +489,7 @@ router.get('/export-pdf', authenticate, authorize(['cdc', 'principal']), async (
         item.internship?.internshipDetails?.mode || 'N/A',
         item.internship?.internshipDetails?.fromDate ? moment(item.internship.internshipDetails.fromDate).format('YYYY-MM-DD') : 'N/A',
         item.internship?.internshipDetails?.toDate ? moment(item.internship.internshipDetails.toDate).format('YYYY-MM-DD') : 'N/A',
-        item.internship?.internshipDetails?.totalDuration ? `${item.internship.internshipDetails.totalDuration} M` : 'N/A',
+        getFormattedDuration(item.internship?.internshipDetails?.fromDate, item.internship?.internshipDetails?.toDate, item.internship?.internshipDetails?.totalDuration) || 'N/A',
         item.completionDate ? moment(item.completionDate).format('YYYY-MM-DD') : 'N/A',
         item.status || ''
       ]);
@@ -443,7 +510,7 @@ router.get('/export-pdf', authenticate, authorize(['cdc', 'principal']), async (
         item.internshipDetails?.mode || '',
         item.internshipDetails?.fromDate ? moment(item.internshipDetails.fromDate).format('YYYY-MM-DD') : '',
         item.internshipDetails?.toDate ? moment(item.internshipDetails.toDate).format('YYYY-MM-DD') : '',
-        item.internshipDetails?.totalDuration ? `${item.internshipDetails.totalDuration} M` : '',
+        getFormattedDuration(item.internshipDetails?.fromDate, item.internshipDetails?.toDate, item.internshipDetails?.totalDuration),
         item.eligibilityStatus || '',
         item.finalStatus || ''
       ]);

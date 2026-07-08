@@ -29,4 +29,13 @@ const MessageSchema = new mongoose.Schema({
   status: { type: String, enum: ['sent', 'delivered', 'read'], default: 'sent' },
 }, { timestamps: true });
 
+MessageSchema.index({ senderId: 1 });
+MessageSchema.index({ recipientId: 1 });
+MessageSchema.index({ isRead: 1 });
+MessageSchema.index({ parentMessageId: 1 });
+MessageSchema.index({ createdAt: -1 });
+MessageSchema.index({ recipientId: 1, isRead: 1 });
+MessageSchema.index({ senderId: 1, type: 1 });
+MessageSchema.index({ parentMessageId: 1, createdAt: 1 });
+
 export const Message = mongoose.model('Message', MessageSchema);

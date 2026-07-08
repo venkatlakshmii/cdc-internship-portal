@@ -5,6 +5,7 @@ import {
   Search, Filter, CheckCircle, AlertCircle, Eye, ExternalLink, AlertTriangle,
   FileText, Download, X, Calendar, GraduationCap, ChevronDown
 } from 'lucide-react';
+import { convertDecimalMonthsToMonthsDays } from '../utils/duration';
 
 export default function CDCDashboard() {
   const [applications, setApplications] = useState<any[]>([]);
@@ -12,8 +13,9 @@ export default function CDCDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [bands, setBands] = useState({ spfBand: '', cdcBand: '' });
-  const [cdcRecommendation, setCdcRecommendation] = useState('Approved');
+  const [cdcRecommendation, setCdcRecommendation] = useState('Recommended');
   const [cdcRemarks, setCdcRemarks] = useState('');
+  const [verifiedAttendance, setVerifiedAttendance] = useState('');
 
   // Filter & Search State
   const [search, setSearch] = useState('');
@@ -67,13 +69,19 @@ export default function CDCDashboard() {
       alert('Please select both SPF Band and CDC Band before submitting assessment.');
       return;
     }
+    const val = Number(verifiedAttendance);
+    if (isNaN(val) || val < 0 || val > 100) {
+      alert('Please enter a valid verified attendance percentage between 0 and 100.');
+      return;
+    }
     try {
       const token = localStorage.getItem('token');
       await axios.patch(`/api/internships/cdc-review/${id}`, {
         spfBand: bands.spfBand,
         cdcBand: bands.cdcBand,
         cdcRecommendation,
-        cdcRemarks
+        cdcRemarks,
+        verifiedAttendancePercentage: val
       }, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -139,29 +147,41 @@ export default function CDCDashboard() {
     const studentName = app.studentDetails?.name || '';
     const rollNo = app.studentDetails?.rollNumber || '';
     const q = search.toLowerCase().trim();
-    const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+    const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
     const cleanSearch = rollMatch ? rollMatch[1] : q;
     const matchSearch = studentName.toLowerCase().includes(cleanSearch) || 
                         rollNo.toLowerCase().includes(cleanSearch);
     
     const matchStatus = statusFilter === 'all' || (() => {
-      const eligibility = app.eligibilityStatus.toLowerCase();
-      if (statusFilter === 'pending') return eligibility.includes('pending');
-      if (statusFilter === 'approved') return ['approved', '3 months approved', 'conditionally approved', '3 months + 3 months extension'].some(st => eligibility === st);
+      const eligibility = (app.eligibilityStatus || '').toLowerCase();
+      const cdcSt = (app.cdcRecommendation || '').toLowerCase();
+      if (statusFilter === 'pending') return eligibility.includes('pending') || cdcSt === 'pending';
+      if (statusFilter === 'approved') return [
+        'approved', '3 months approved', 'conditionally approved', '3 months + 3 months extension',
+        'recommended'
+      ].some(st => eligibility === st || cdcSt === st);
       if (statusFilter === 'not eligible') return eligibility.includes('not eligible');
-      return eligibility.includes(statusFilter.toLowerCase());
+      if (statusFilter === 'rejected' || statusFilter === 'not recommended') 
+        return eligibility.includes('not recommended') || eligibility.includes('rejected') || cdcSt.includes('not recommended');
+      return eligibility.includes(statusFilter.toLowerCase()) || cdcSt.includes(statusFilter.toLowerCase());
     })();
 
     const matchBranch = branchFilter === 'all' || app.studentDetails?.branch === branchFilter;
     const matchYear = yearFilter === 'all' || (app.studentDetails?.year && (app.studentDetails.year.includes(yearFilter + ' Year') || app.studentDetails.year === yearFilter));
     const matchType = typeFilter === 'all' || app.internshipDetails?.mode === typeFilter;
     
+    // Date filter on submission date (createdAt), not internship start date
     const matchDate = (() => {
       if (!startDate && !endDate) return true;
-      if (!app.internshipDetails?.fromDate) return false;
-      const appDateStr = typeof app.internshipDetails.fromDate === 'string'
-        ? app.internshipDetails.fromDate.substring(0, 10)
-        : new Date(app.internshipDetails.fromDate).toISOString().substring(0, 10);
+      const submittedAt = app.createdAt || app.submittedAt;
+      if (!submittedAt) return false;
+      
+      const dateObj = new Date(submittedAt);
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const appDateStr = `${year}-${month}-${day}`;
+      
       if (startDate && appDateStr < startDate) return false;
       if (endDate && appDateStr > endDate) return false;
       return true;
@@ -286,6 +306,7 @@ export default function CDCDashboard() {
         {/* Sub-toolbar: Date Inputs & Print/Export Buttons */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-3 border-t border-slate-100">
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs font-bold text-slate-600">
+            <span className="text-slate-400 text-[10px] uppercase tracking-widest">Submission Date:</span>
             <div className="flex items-center gap-2">
               <span>From:</span>
               <input
@@ -365,24 +386,63 @@ export default function CDCDashboard() {
                   </td>
                   <td className="px-6 py-4">
                     <p className="text-slate-700 font-medium text-sm">{app.internshipDetails.companyName}</p>
-                    <p className="text-slate-400 text-xs">{app.internshipDetails.totalDuration} Months</p>
+                    <p className="text-slate-400 text-xs">{app.internshipDetails.durationDisplay || convertDecimalMonthsToMonthsDays(app.internshipDetails.totalDuration)}</p>
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <span className={`text-sm font-bold ${app.studentDetails.attendancePercentage < 75 ? 'text-red-500' : 'text-emerald-500'}`}>
-                      {app.studentDetails.attendancePercentage}%
-                    </span>
+                    <div className="flex flex-col items-center">
+                      <span className={`text-sm font-bold ${app.studentDetails.attendancePercentage < 75 ? 'text-red-500' : 'text-emerald-500'}`}>
+                        {Number(app.studentDetails.attendancePercentage).toFixed(2)}%
+                      </span>
+                      {app.verifiedAttendancePercentage !== undefined && (
+                        <span className={`text-[10px] font-bold uppercase mt-0.5 px-1.5 py-0.5 rounded-full border ${
+                          app.isAttendanceVerified 
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
+                            : 'bg-amber-50 text-amber-600 border-amber-100'
+                        }`}>
+                          {app.isAttendanceVerified ? 'Verified' : 'Discrepancy'}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
-                      ['Approved', '3 Months Approved'].includes(app.eligibilityStatus) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                      ['Conditionally Approved', '3 Months + 3 Months Extension'].includes(app.eligibilityStatus) ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                      app.eligibilityStatus === 'Not Eligible' ? 'bg-red-50 text-red-600 border-red-100' :
-                      app.eligibilityStatus.includes('Rejected by CDC') ? 'bg-red-50 text-red-600 border-red-100' :
-                      app.eligibilityStatus === 'Needs Clarification' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                      'bg-blue-50 text-blue-600 border-blue-100'
-                    }`}>
-                      {app.eligibilityStatus}
-                    </span>
+                    {(() => {
+                      // Map internal eligibility status to CDC-facing display label
+                      const raw = app.eligibilityStatus || 'Pending CDC Review';
+                      let label = raw;
+                      let colorClass = 'bg-blue-50 text-blue-600 border-blue-100';
+
+                      if (raw === '3 Months Approved' || raw === '3 Months Recommended') {
+                        label = 'Recommended (3 Months)';
+                        colorClass = 'bg-emerald-50 text-emerald-600 border-emerald-100';
+                      } else if (raw === '3 Months + 3 Months Extension') {
+                        label = 'Recommended (6 Months)';
+                        colorClass = 'bg-emerald-50 text-emerald-600 border-emerald-100';
+                      } else if (raw === 'Approved' || raw === 'Recommended') {
+                        label = 'Recommended';
+                        colorClass = 'bg-emerald-50 text-emerald-600 border-emerald-100';
+                      } else if (raw === 'Conditionally Approved' || raw === 'Conditionally Recommended') {
+                        label = 'Conditionally Recommended';
+                        colorClass = 'bg-amber-50 text-amber-600 border-amber-100';
+                      } else if (raw === 'Not Eligible') {
+                        label = 'Not Eligible';
+                        colorClass = 'bg-red-50 text-red-600 border-red-100';
+                      } else if (raw.includes('Not Recommended by CDC') || raw.includes('Rejected')) {
+                        label = raw;
+                        colorClass = 'bg-red-50 text-red-600 border-red-100';
+                      } else if (raw === 'Need Clarification' || raw === 'Clarification Required by CDC') {
+                        label = 'Clarification Required';
+                        colorClass = 'bg-amber-50 text-amber-600 border-amber-100';
+                      } else if (raw.includes('Pending')) {
+                        label = 'Pending Review';
+                        colorClass = 'bg-slate-100 text-slate-600 border-slate-200';
+                      }
+
+                      return (
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${colorClass}`}>
+                          {label}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <button
@@ -392,10 +452,15 @@ export default function CDCDashboard() {
                           spfBand: app.spfBand || '',
                           cdcBand: app.cdcBand || ''
                         });
+                        setVerifiedAttendance(
+                          app.verifiedAttendancePercentage !== undefined
+                            ? Number(app.verifiedAttendancePercentage).toFixed(2)
+                            : Number(app.studentDetails.attendancePercentage).toFixed(2)
+                        );
                         const initialRecommendation = 
-                          (app.cdcRecommendation === 'Approved' || app.cdcRecommendation === 'Rejected' || app.cdcRecommendation === 'Needs Clarification') 
+                          (app.cdcRecommendation === 'Recommended' || app.cdcRecommendation === 'Not Recommended' || app.cdcRecommendation === 'Need Clarification') 
                           ? app.cdcRecommendation 
-                          : 'Approved';
+                          : 'Recommended';
                         setCdcRecommendation(initialRecommendation);
                         setCdcRemarks(app.cdcRemarks || '');
                       }}
@@ -448,7 +513,19 @@ export default function CDCDashboard() {
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Student Info</h4>
                   <p className="text-slate-900 font-bold">{selectedApp.studentDetails.name}</p>
                   <p className="text-slate-500 text-sm">{selectedApp.studentDetails.rollNumber} | {selectedApp.studentDetails.branch} | {selectedApp.studentDetails.year}</p>
-                  <p className="text-slate-700 font-bold mt-2">Attendance: {selectedApp.studentDetails.attendancePercentage}%</p>
+                  <p className="text-slate-700 font-bold mt-2">Attendance (Submitted): {Number(selectedApp.studentDetails.attendancePercentage).toFixed(2)}%</p>
+                  {selectedApp.verifiedAttendancePercentage !== undefined && (
+                    <p className="text-slate-700 font-bold mt-1 flex items-center gap-1.5">
+                      <span>Attendance (Verified): {Number(selectedApp.verifiedAttendancePercentage).toFixed(2)}%</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wider ${
+                        selectedApp.isAttendanceVerified
+                          ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                          : 'bg-amber-50 text-amber-600 border-amber-100'
+                      }`}>
+                        {selectedApp.isAttendanceVerified ? 'Verified ✓' : 'Discrepancy ⚠️'}
+                      </span>
+                    </p>
+                  )}
                   {selectedApp.studentDetails.cgpa !== undefined && (
                     <p className="text-slate-700 font-bold">CGPA: {Number(selectedApp.studentDetails.cgpa).toFixed(2)}</p>
                   )}
@@ -462,9 +539,23 @@ export default function CDCDashboard() {
                 <div>
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Internship Info</h4>
                   <p className="text-slate-900 font-bold">{selectedApp.internshipDetails.companyName}</p>
-                  <p className="text-slate-500 text-sm">{selectedApp.internshipDetails.totalDuration} Months | {selectedApp.internshipDetails.mode}</p>
+                  <p className="text-slate-500 text-sm">{selectedApp.internshipDetails.durationDisplay || convertDecimalMonthsToMonthsDays(selectedApp.internshipDetails.totalDuration)} | {selectedApp.internshipDetails.mode}</p>
                 </div>
               </div>
+
+              {/* Critical Subject display */}
+              {selectedApp.criticalSubject && (
+                <div className="p-4 bg-amber-50 border border-amber-200/60 rounded-2xl flex items-start gap-3">
+                  <div className="p-2 bg-amber-100 text-amber-600 rounded-xl shrink-0">
+                    <span className="text-base">⚡</span>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-0.5">Critical Subject Selected</p>
+                    <p className="text-slate-900 font-bold text-sm">{selectedApp.criticalSubject}</p>
+                    <p className="text-slate-500 text-xs mt-0.5">Student plans to attend this subject during internship</p>
+                  </div>
+                </div>
+              )}
 
               {/* Recommendation and Remarks */}
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
@@ -477,9 +568,9 @@ export default function CDCDashboard() {
                       value={cdcRecommendation}
                       onChange={(e) => setCdcRecommendation(e.target.value)}
                     >
-                      <option value="Approved">Approved</option>
-                      <option value="Rejected">Rejected</option>
-                      <option value="Needs Clarification">Needs Clarification</option>
+                      <option value="Recommended">Recommended</option>
+                      <option value="Not Recommended">Not Recommended</option>
+                      <option value="Need Clarification">Need Clarification</option>
                     </select>
                   </div>
                   <div>
@@ -496,12 +587,12 @@ export default function CDCDashboard() {
               </div>
 
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
-                <h4 className="text-sm font-bold text-slate-900">Assign Bands</h4>
-                <div className="grid grid-cols-2 gap-6">
+                <h4 className="text-sm font-bold text-slate-900">Assign Bands & Verify Attendance</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">SPF Band <span className="text-red-500">*</span></label>
                     <select
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold"
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold text-sm"
                       value={bands.spfBand}
                       onChange={(e) => setBands({ ...bands, spfBand: e.target.value })}
                     >
@@ -515,7 +606,7 @@ export default function CDCDashboard() {
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">CDC Band <span className="text-red-500">*</span></label>
                     <select
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold"
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold text-sm"
                       value={bands.cdcBand}
                       onChange={(e) => setBands({ ...bands, cdcBand: e.target.value })}
                     >
@@ -525,6 +616,20 @@ export default function CDCDashboard() {
                       <option value="C">Band C</option>
                       <option value="D">Band D</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Verified Attendance (%) <span className="text-red-500">*</span></label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold text-sm focus:ring-2 focus:ring-[#78be21]/20 focus:border-[#78be21]"
+                      placeholder="e.g. 78.50"
+                      value={verifiedAttendance}
+                      onChange={(e) => setVerifiedAttendance(e.target.value)}
+                      required
+                    />
                   </div>
                 </div>
               </div>

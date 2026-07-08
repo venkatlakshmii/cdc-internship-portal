@@ -104,10 +104,42 @@ router.get('/my-completions', authenticate, authorize(['student']), async (req: 
   }
 });
 
-// CDC / Principal: Get All Completions
+// CDC / Principal: Get All Completions — supports date, status, branch, search filters
 router.get('/all', authenticate, authorize(['cdc', 'principal']), async (req: AuthRequest, res, next) => {
   try {
-    const completions = await InternshipCompletion.find().sort({ createdAt: -1 });
+    const { startDate, endDate, status, branch, search } = req.query;
+    const query: any = {};
+
+    if (branch && branch !== 'all') {
+      query['studentDetails.branch'] = branch;
+    }
+    if (status && status !== 'all') {
+      query['status'] = status;
+    }
+    // Date filter on completionDate
+    if (startDate || endDate) {
+      query['completionDate'] = {};
+      if (startDate) {
+        const [year, month, day] = String(startDate).split('-').map(Number);
+        query['completionDate'].$gte = new Date(year, month - 1, day, 0, 0, 0, 0);
+      }
+      if (endDate) {
+        const [year, month, day] = String(endDate).split('-').map(Number);
+        query['completionDate'].$lte = new Date(year, month - 1, day, 23, 59, 59, 999);
+      }
+    }
+    if (search) {
+      const q = String(search).toLowerCase().trim();
+      const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
+      const cleanSearch = rollMatch ? rollMatch[1] : q;
+      query['$or'] = [
+        { 'studentDetails.name': new RegExp(cleanSearch, 'i') },
+        { 'studentDetails.rollNumber': new RegExp(cleanSearch, 'i') },
+        { 'studentDetails.branch': new RegExp(cleanSearch, 'i') }
+      ];
+    }
+
+    const completions = await InternshipCompletion.find(query).sort({ createdAt: -1 });
     res.json(completions);
   } catch (error) {
     next(error);

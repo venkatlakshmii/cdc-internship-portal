@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion } from 'motion/react';
-import { 
+import {
   CheckCircle, XCircle, Eye, ExternalLink, ShieldCheck, AlertCircle, AlertTriangle,
   Search, Filter, FileText, Download, X, Calendar, GraduationCap, ChevronDown
 } from 'lucide-react';
+import { convertDecimalMonthsToMonthsDays } from '../utils/duration';
 
 export default function PrincipalDashboard() {
   const [applications, setApplications] = useState<any[]>([]);
@@ -37,7 +38,7 @@ export default function PrincipalDashboard() {
       setIsExporting(true);
       const token = localStorage.getItem('token');
       const endpoint = format === 'pdf' ? '/api/reports/export-pdf' : '/api/reports/export-excel';
-      
+
       const response = await axios.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
         params: {
@@ -52,9 +53,9 @@ export default function PrincipalDashboard() {
         },
         responseType: 'blob'
       });
-      
-      const blob = new Blob([response.data], { 
-        type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+
+      const blob = new Blob([response.data], {
+        type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -129,30 +130,43 @@ export default function PrincipalDashboard() {
     const studentName = app.studentDetails?.name || '';
     const rollNo = app.studentDetails?.rollNumber || '';
     const q = search.toLowerCase().trim();
-    const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+    const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
     const cleanSearch = rollMatch ? rollMatch[1] : q;
-    const matchSearch = studentName.toLowerCase().includes(cleanSearch) || 
-                        rollNo.toLowerCase().includes(cleanSearch);
-    
+    const matchSearch = studentName.toLowerCase().includes(cleanSearch) ||
+      rollNo.toLowerCase().includes(cleanSearch);
+
     const matchStatus = statusFilter === 'all' || (() => {
-      const eligibility = app.eligibilityStatus.toLowerCase();
-      const finalSt = app.finalStatus?.toLowerCase() || '';
-      if (statusFilter === 'pending') return eligibility.includes('pending') || finalSt.includes('pending');
-      if (statusFilter === 'approved') return ['approved', '3 months approved', 'conditionally approved', '3 months + 3 months extension'].some(st => eligibility === st || finalSt === st);
-      if (statusFilter === 'not eligible') return eligibility.includes('not eligible') || finalSt.includes('not eligible');
+      const eligibility = (app.eligibilityStatus || '').toLowerCase();
+      const finalSt = (app.finalStatus || '').toLowerCase();
+      const cdcRec = (app.cdcRecommendation || '').toLowerCase();
+      if (statusFilter === 'pending') 
+        return eligibility.includes('pending') || finalSt.includes('pending') || cdcRec === 'pending';
+      if (statusFilter === 'approved') 
+        return finalSt === 'approved' || [
+          'approved', '3 months approved', 'conditionally approved', '3 months + 3 months extension', 'recommended'
+        ].some(st => eligibility === st);
+      if (statusFilter === 'not eligible') return eligibility.includes('not eligible');
+      if (statusFilter === 'Rejected') 
+        return finalSt === 'rejected' || eligibility.includes('not recommended') || eligibility.includes('rejected');
       return eligibility.includes(statusFilter.toLowerCase()) || finalSt.includes(statusFilter.toLowerCase());
     })();
 
     const matchBranch = branchFilter === 'all' || app.studentDetails?.branch === branchFilter;
     const matchYear = yearFilter === 'all' || (app.studentDetails?.year && (app.studentDetails.year.includes(yearFilter + ' Year') || app.studentDetails.year === yearFilter));
     const matchType = typeFilter === 'all' || app.internshipDetails?.mode === typeFilter;
-    
+
+    // Date filter on submission date (createdAt), not internship start date
     const matchDate = (() => {
       if (!startDate && !endDate) return true;
-      if (!app.internshipDetails?.fromDate) return false;
-      const appDateStr = typeof app.internshipDetails.fromDate === 'string'
-        ? app.internshipDetails.fromDate.substring(0, 10)
-        : new Date(app.internshipDetails.fromDate).toISOString().substring(0, 10);
+      const submittedAt = app.createdAt || app.submittedAt;
+      if (!submittedAt) return false;
+      
+      const dateObj = new Date(submittedAt);
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const appDateStr = `${year}-${month}-${day}`;
+      
       if (startDate && appDateStr < startDate) return false;
       if (endDate && appDateStr > endDate) return false;
       return true;
@@ -281,6 +295,7 @@ export default function PrincipalDashboard() {
         {/* Sub-toolbar: Date Inputs & Print/Export Buttons */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-3 border-t border-slate-100">
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto text-xs font-bold text-slate-600">
+            <span className="text-slate-400 text-[10px] uppercase tracking-widest">Submission Date:</span>
             <div className="flex items-center gap-2">
               <span>From:</span>
               <input
@@ -350,39 +365,39 @@ export default function PrincipalDashboard() {
                 <div className="flex flex-wrap items-center gap-3">
                   <h3 className="text-lg font-bold text-slate-900">{app.studentDetails.name}</h3>
                   {(() => {
-                    if (app.cdcRecommendation === 'Approved') {
+                    if (app.cdcRecommendation === 'Recommended') {
                       return (
                         <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-emerald-50 text-emerald-600 border-emerald-100 uppercase tracking-wider">
-                          CDC Recommended: Approved
+                          CDC: Recommended
                         </span>
                       );
                     }
-                    if (app.cdcRecommendation === 'Rejected') {
+                    if (app.cdcRecommendation === 'Not Recommended') {
                       return (
                         <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-red-50 text-red-600 border-red-100 uppercase tracking-wider">
-                          CDC Recommended: Rejected
+                          CDC: Not Recommended
                         </span>
                       );
                     }
-                    if (app.cdcRecommendation === 'Needs Clarification') {
+                    if (app.cdcRecommendation === 'Need Clarification') {
                       return (
                         <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-amber-50 text-amber-600 border-amber-100 uppercase tracking-wider">
-                          CDC Recommended: Needs Clarification
+                          CDC: Need Clarification
                         </span>
                       );
                     }
                     return (
                       <span className="px-3 py-1 rounded-full text-[10px] font-bold border bg-slate-50 text-slate-600 border-slate-100 uppercase tracking-wider">
-                        CDC Recommended: Pending
+                        CDC: Pending Review
                       </span>
                     );
                   })()}
                   {(() => {
                     const status = app.principalDecision || 'Pending';
-                    const colorClass = 
+                    const colorClass =
                       status === 'Approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                      status === 'Rejected' ? 'bg-red-50 text-red-600 border-red-100' :
-                      'bg-blue-50 text-blue-600 border-blue-100';
+                        status === 'Rejected' ? 'bg-red-50 text-red-600 border-red-100' :
+                          'bg-blue-50 text-blue-600 border-blue-100';
                     return (
                       <span className={`px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${colorClass}`}>
                         Principal Decision: {status}
@@ -396,7 +411,7 @@ export default function PrincipalDashboard() {
                     </span>
                   )}
                 </div>
-                
+
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-x-8 gap-y-2 text-sm">
                   <div>
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Company</p>
@@ -404,15 +419,22 @@ export default function PrincipalDashboard() {
                   </div>
                   <div>
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Duration</p>
-                    <p className="text-slate-700 font-medium">{app.internshipDetails.totalDuration} Months</p>
+                    <p className="text-slate-700 font-medium">{app.internshipDetails.durationDisplay || convertDecimalMonthsToMonthsDays(app.internshipDetails.totalDuration)}</p>
                   </div>
                   <div>
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Permissible</p>
-                    <p className="text-slate-700 font-bold">{app.permissibleDuration} Months</p>
+                    <p className="text-slate-700 font-bold">{convertDecimalMonthsToMonthsDays(app.permissibleDuration)}</p>
                   </div>
                   <div>
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Attendance</p>
-                    <p className="text-emerald-500 font-bold">{app.studentDetails.attendancePercentage}%</p>
+                    <p className="text-emerald-500 font-bold">
+                      {Number(app.studentDetails.attendancePercentage).toFixed(2)}%
+                      {app.verifiedAttendancePercentage !== undefined && (
+                        <span className="text-[10px] text-slate-400 font-medium block">
+                          Verified: {Number(app.verifiedAttendancePercentage).toFixed(2)}%
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <div>
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Bands (SPF | CDC)</p>
@@ -457,7 +479,7 @@ export default function PrincipalDashboard() {
               <h3 className="text-xl font-bold">Final Decision</h3>
               <button onClick={() => setSelectedApp(null)} className="text-slate-400 hover:text-white">✕</button>
             </div>
-            
+
             <div className="p-8 space-y-8 max-h-[70vh] overflow-auto">
               <div className="grid grid-cols-2 gap-8">
                 {selectedApp.hasAcademicConflict && (
@@ -479,7 +501,19 @@ export default function PrincipalDashboard() {
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Student Info</h4>
                   <p className="text-slate-900 font-bold">{selectedApp.studentDetails.name}</p>
                   <p className="text-slate-500 text-sm">{selectedApp.studentDetails.rollNumber} | {selectedApp.studentDetails.branch} | {selectedApp.studentDetails.year}</p>
-                  <p className="text-slate-700 font-bold mt-2">Attendance: {selectedApp.studentDetails.attendancePercentage}%</p>
+                  <p className="text-slate-700 font-bold mt-2">Attendance (Submitted): {Number(selectedApp.studentDetails.attendancePercentage).toFixed(2)}%</p>
+                  {selectedApp.verifiedAttendancePercentage !== undefined && (
+                    <p className="text-slate-700 font-bold mt-1 flex items-center gap-1.5">
+                      <span>Attendance (Verified): {Number(selectedApp.verifiedAttendancePercentage).toFixed(2)}%</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wider ${
+                        selectedApp.isAttendanceVerified
+                          ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                          : 'bg-amber-50 text-amber-600 border-amber-100'
+                      }`}>
+                        {selectedApp.isAttendanceVerified ? 'Verified ✓' : 'Discrepancy ⚠️'}
+                      </span>
+                    </p>
+                  )}
                   {selectedApp.studentDetails.cgpa !== undefined && (
                     <p className="text-slate-700 font-bold">CGPA: {Number(selectedApp.studentDetails.cgpa).toFixed(2)}</p>
                   )}
@@ -495,13 +529,13 @@ export default function PrincipalDashboard() {
                   <p className="text-slate-900 text-sm font-bold">
                     CDC Recommendation:{" "}
                     <span className={`font-bold uppercase ${
-                      selectedApp.cdcRecommendation === 'Approved' ? 'text-emerald-600' :
-                      selectedApp.cdcRecommendation === 'Rejected' ? 'text-red-600' : 'text-amber-600'
+                      selectedApp.cdcRecommendation === 'Recommended' ? 'text-emerald-600' :
+                      selectedApp.cdcRecommendation === 'Not Recommended' ? 'text-red-600' : 'text-amber-600'
                     }`}>
-                      {selectedApp.cdcRecommendation === 'Approved' ? 'CDC Recommended: Approved' :
-                       selectedApp.cdcRecommendation === 'Rejected' ? 'CDC Recommended: Rejected' :
-                       selectedApp.cdcRecommendation === 'Needs Clarification' ? 'CDC Recommended: Needs Clarification' :
-                       `CDC Recommended: ${(selectedApp.cdcRecommendation || 'Pending')}`}
+                      {selectedApp.cdcRecommendation === 'Recommended' ? 'Recommended ✓' :
+                        selectedApp.cdcRecommendation === 'Not Recommended' ? 'Not Recommended ✗' :
+                        selectedApp.cdcRecommendation === 'Need Clarification' ? 'Need Clarification' :
+                          `${(selectedApp.cdcRecommendation || 'Pending')}`}
                     </span>
                   </p>
                   <p className="text-slate-700 text-xs mt-1 font-semibold">
@@ -519,9 +553,13 @@ export default function PrincipalDashboard() {
                     </p>
                   )}
                   {selectedApp.criticalSubject && (
-                    <div className="mt-3.5 p-3 bg-amber-50 border border-amber-100 rounded-xl">
-                      <span className="font-bold text-[10px] uppercase text-amber-800 tracking-wide block mb-0.5">Critical Subject Choice</span>
-                      <span className="text-slate-800 font-semibold text-xs leading-snug">{selectedApp.criticalSubject}</span>
+                    <div className="mt-3.5 p-3.5 bg-amber-50 border border-amber-200/60 rounded-xl flex items-start gap-2.5">
+                      <span className="text-base shrink-0">⚡</span>
+                      <div>
+                        <span className="font-bold text-[10px] uppercase text-amber-800 tracking-wide block mb-0.5">Critical Subject Selected</span>
+                        <span className="text-slate-800 font-semibold text-xs leading-snug">{selectedApp.criticalSubject}</span>
+                        <p className="text-slate-500 text-[10px] mt-0.5">Student plans to attend this subject during internship</p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -592,10 +630,9 @@ export default function PrincipalDashboard() {
                 </a>
                 <button
                   onClick={() => handleDecision(selectedApp._id)}
-                  className={`flex-1 py-3 text-white font-bold rounded-xl shadow-lg transition-all cursor-pointer ${
-                    finalStatus === 'Approved' ? 'bg-[#78be21] shadow-[#78be21]/20 hover:bg-[#68a61d]' :
-                    'bg-red-500 shadow-red-500/20 hover:bg-red-600'
-                  }`}
+                  className={`flex-1 py-3 text-white font-bold rounded-xl shadow-lg transition-all cursor-pointer ${finalStatus === 'Approved' ? 'bg-[#78be21] shadow-[#78be21]/20 hover:bg-[#68a61d]' :
+                      'bg-red-500 shadow-red-500/20 hover:bg-red-600'
+                    }`}
                 >
                   {finalStatus === 'Approved' ? 'Confirm Approval' : 'Confirm Rejection'}
                 </button>

@@ -36,7 +36,7 @@ export default function StudentRegistration() {
             branch: user.branch || '',
             year: user.year || '',
             section: user.section || '',
-            attendancePercentage: user.attendancePercentage !== undefined ? String(user.attendancePercentage) : '',
+            attendancePercentage: user.attendancePercentage !== undefined ? Number(user.attendancePercentage).toFixed(2) : '',
             cgpa: user.cgpa !== undefined ? String(user.cgpa) : '',
             contactNumber: user.contactNumber || '',
             personalEmail: user.personalEmail || '',
@@ -61,7 +61,7 @@ export default function StudentRegistration() {
   const contactError = formData.contactNumber && !/^\d{10}$/.test(formData.contactNumber) ? 'Invalid phone number. Please enter only 10 digits.' : '';
   const attendanceError = Number(formData.attendancePercentage) > 100 ? 'Invalid Attendance Percentage' : '';
   const cgpaError = formData.cgpa && (Number(formData.cgpa) > 10 || Number(formData.cgpa) < 0) ? 'Invalid CGPA' : '';
-  const rollNumberError = formData.rollNumber && !/^[0-9]{2}E51A[0-9A-Z]{4}$/i.test(formData.rollNumber) ? 'Invalid Roll Number format. (e.g. rollnumber)' : '';
+  const rollNumberError = formData.rollNumber && !/^[0-9A-Z]{10}$/i.test(formData.rollNumber) ? 'Invalid Roll Number format. (e.g. 10 alphanumeric characters)' : '';
   const isFormInvalid = !!contactError || !!attendanceError || !!cgpaError || !!rollNumberError;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -116,7 +116,7 @@ export default function StudentRegistration() {
   const completion = getProfileCompletion();
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
@@ -142,7 +142,7 @@ export default function StudentRegistration() {
             {completion}%
             <svg className="absolute inset-0 w-full h-full rotate-[-90deg]">
               <circle cx="20" cy="20" r="18" fill="transparent" stroke="#f1f5f9" strokeWidth="2.5" />
-              <circle cx="20" cy="20" r="18" fill="transparent" stroke="#78be21" strokeWidth="2.5" 
+              <circle cx="20" cy="20" r="18" fill="transparent" stroke="#78be21" strokeWidth="2.5"
                 strokeDasharray={`${2 * Math.PI * 18}`}
                 strokeDashoffset={`${2 * Math.PI * 18 * (1 - completion / 100)}`}
                 strokeLinecap="round"
@@ -184,7 +184,7 @@ export default function StudentRegistration() {
             {/* Rules & Eligibility - Left Column */}
             <div className="lg:col-span-6 space-y-4">
               <h4 className="font-bold text-xs text-slate-400 uppercase tracking-widest mb-1">Internship Eligibility Rules</h4>
-              
+
               {/* Semester-based Restriction Warning Box */}
               <div className="p-4 bg-amber-50 border border-amber-200/60 rounded-xl flex gap-3">
                 <span className="text-lg shrink-0">⚠️</span>
@@ -356,19 +356,18 @@ export default function StudentRegistration() {
                     type="text"
                     required
                     placeholder="e.g. rollnumber"
-                    className={`w-full pl-10 pr-4 py-2.5 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-800 text-sm ${
-                      rollNumberError 
-                        ? 'border-red-300 focus:ring-red-200 focus:border-red-500 bg-red-50/20' 
-                        : 'border-slate-200 focus:ring-[#78be21]/20 focus:border-[#78be21]'
-                    }`}
+                    className={`w-full pl-10 pr-4 py-2.5 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-800 text-sm ${rollNumberError
+                      ? 'border-red-300 focus:ring-red-200 focus:border-red-500 bg-red-50/20'
+                      : 'border-slate-200 focus:ring-[#78be21]/20 focus:border-[#78be21]'
+                      }`}
                     value={formData.rollNumber}
                     onChange={(e) => handleInputChange('rollNumber', e.target.value)}
                   />
                 </div>
                 {rollNumberError && (
-                  <motion.p 
-                    initial={{ opacity: 0, y: -5 }} 
-                    animate={{ opacity: 1, y: 0 }} 
+                  <motion.p
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
                     className="text-red-500 text-[10px] font-bold mt-1.5 uppercase tracking-wider flex items-center gap-1"
                   >
                     <Info size={11} className="shrink-0" /> {rollNumberError}
@@ -451,23 +450,24 @@ export default function StudentRegistration() {
                   <Percent className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                   <input
                     type="number"
+                    step="0.01"
                     required
                     min="0"
-                    placeholder="e.g. 85"
-                    className={`w-full pl-10 pr-8 py-2.5 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-800 text-sm ${
-                      attendanceError 
-                        ? 'border-red-300 focus:ring-red-200 focus:border-red-500 bg-red-50/20' 
-                        : 'border-slate-200 focus:ring-[#78be21]/20 focus:border-[#78be21]'
-                    }`}
+                    max="100"
+                    placeholder="e.g. 85.00"
+                    className={`w-full pl-10 pr-8 py-2.5 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-800 text-sm ${attendanceError
+                      ? 'border-red-300 focus:ring-red-200 focus:border-red-500 bg-red-50/20'
+                      : 'border-slate-200 focus:ring-[#78be21]/20 focus:border-[#78be21]'
+                      }`}
                     value={formData.attendancePercentage}
                     onChange={(e) => handleInputChange('attendancePercentage', e.target.value)}
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
                 </div>
                 {attendanceError && (
-                  <motion.p 
-                    initial={{ opacity: 0, y: -5 }} 
-                    animate={{ opacity: 1, y: 0 }} 
+                  <motion.p
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
                     className="text-red-500 text-[10px] font-bold mt-1.5 uppercase tracking-wider flex items-center gap-1"
                   >
                     <Info size={11} className="shrink-0" /> {attendanceError}
@@ -492,19 +492,18 @@ export default function StudentRegistration() {
                     min="0"
                     max="10"
                     placeholder="e.g. 8.50"
-                    className={`w-full pl-10 pr-4 py-2.5 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-800 text-sm ${
-                      cgpaError 
-                        ? 'border-red-300 focus:ring-red-200 focus:border-red-500 bg-red-50/20' 
-                        : 'border-slate-200 focus:ring-[#78be21]/20 focus:border-[#78be21]'
-                    }`}
+                    className={`w-full pl-10 pr-4 py-2.5 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-800 text-sm ${cgpaError
+                      ? 'border-red-300 focus:ring-red-200 focus:border-red-500 bg-red-50/20'
+                      : 'border-slate-200 focus:ring-[#78be21]/20 focus:border-[#78be21]'
+                      }`}
                     value={formData.cgpa}
                     onChange={(e) => handleInputChange('cgpa', e.target.value)}
                   />
                 </div>
                 {cgpaError && (
-                  <motion.p 
-                    initial={{ opacity: 0, y: -5 }} 
-                    animate={{ opacity: 1, y: 0 }} 
+                  <motion.p
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
                     className="text-red-500 text-[10px] font-bold mt-1.5 uppercase tracking-wider flex items-center gap-1"
                   >
                     <Info size={11} className="shrink-0" /> {cgpaError}
@@ -536,19 +535,18 @@ export default function StudentRegistration() {
                     type="tel"
                     required
                     placeholder="e.g. 9876543210"
-                    className={`w-full pl-10 pr-4 py-2.5 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-800 text-sm ${
-                      contactError 
-                        ? 'border-red-300 focus:ring-red-200 focus:border-red-500 bg-red-50/20' 
-                        : 'border-slate-200 focus:ring-[#78be21]/20 focus:border-[#78be21]'
-                    }`}
+                    className={`w-full pl-10 pr-4 py-2.5 bg-slate-50 border rounded-xl focus:ring-2 outline-none transition-all text-slate-800 text-sm ${contactError
+                      ? 'border-red-300 focus:ring-red-200 focus:border-red-500 bg-red-50/20'
+                      : 'border-slate-200 focus:ring-[#78be21]/20 focus:border-[#78be21]'
+                      }`}
                     value={formData.contactNumber}
                     onChange={(e) => handleInputChange('contactNumber', e.target.value)}
                   />
                 </div>
                 {contactError && (
-                  <motion.p 
-                    initial={{ opacity: 0, y: -5 }} 
-                    animate={{ opacity: 1, y: 0 }} 
+                  <motion.p
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
                     className="text-red-500 text-[10px] font-bold mt-1.5 uppercase tracking-wider flex items-center gap-1"
                   >
                     <Info size={11} className="shrink-0" /> {contactError}
@@ -580,7 +578,7 @@ export default function StudentRegistration() {
               <ShieldCheck size={16} className="text-[#78be21] shrink-0" />
               <span>Details are verified by the CDC department.</span>
             </div>
-            
+
             <button
               type="submit"
               disabled={loading || isFormInvalid}

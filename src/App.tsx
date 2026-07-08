@@ -20,7 +20,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         
-        <Route element={<ProtectedRoute roles={['student', 'cdc', 'principal', 'hod', 'dean']} />}>
+        <Route element={<ProtectedRoute roles={['student', 'cdc', 'principal']} />}>
           <Route element={<Layout />}>
             <Route path="/messages" element={<CommunicationCenter />} />
           </Route>
@@ -32,12 +32,7 @@ export default function App() {
           </Route>
         </Route>
 
-        <Route element={<ProtectedRoute roles={['dean']} />}>
-          <Route element={<Layout />}>
-            <Route path="/dean" element={<CommunicationCenter />} />
-          </Route>
-        </Route>
-        
+
         <Route element={<ProtectedRoute roles={['student']} />}>
           <Route element={<Layout />}>
             <Route path="/student" element={<StudentDashboard />} />

@@ -25,4 +25,8 @@ const InternshipCompletionSchema = new mongoose.Schema({
   principalRemarks: { type: String, default: '' },
 }, { timestamps: true });
 
+InternshipCompletionSchema.index({ studentId: 1 });
+InternshipCompletionSchema.index({ status: 1 });
+InternshipCompletionSchema.index({ 'studentDetails.rollNumber': 1 });
+
 export const InternshipCompletion = mongoose.model('InternshipCompletion', InternshipCompletionSchema);

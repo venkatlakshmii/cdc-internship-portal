@@ -46,11 +46,24 @@ const InternshipSchema = new mongoose.Schema({
   criticalSubject: { type: String },
   spfBand: { type: String, enum: ['A', 'B', 'C', 'D', null], default: null },
   cdcBand: { type: String, enum: ['A', 'B', 'C', 'D', null], default: null },
+  verifiedAttendancePercentage: { type: Number },
+  isAttendanceVerified: { type: Boolean, default: false },
   proposedDuration: { type: Number },
   permissibleDuration: { type: Number },
   eligibilityStatus: { 
     type: String, 
-    enum: ['Pending CDC Review', 'Approved', 'Conditionally Approved', '3 Months Approved', '3 Months + 3 Months Extension', 'Not Eligible', 'Rejected by CDC – Pending Principal Review', 'Needs Clarification', 'Clarification Required by CDC', 'Rejected'], 
+    enum: [
+      'Pending CDC Review',
+      // Computed by calculateEligibility utility
+      '3 Months Approved', 'Conditionally Approved', '3 Months + 3 Months Extension',
+      'Not Eligible',
+      // Set by CDC review handler
+      'Clarification Required by CDC',
+      'Not Recommended by CDC – Pending Principal Review',
+      'Rejected by CDC – Pending Principal Review',
+      // Legacy / backward compat values that may exist in DB
+      'Approved', 'Rejected', 'Need Clarification', 'Needs Clarification',
+    ], 
     default: 'Pending CDC Review' 
   },
   finalStatus: { 
@@ -87,7 +100,7 @@ const InternshipSchema = new mongoose.Schema({
   currentStatus: { type: String },
   rollNumber: { type: String, required: true },
   studentEmail: { type: String, required: true },
-  cdcStatus: { type: String, enum: ['Pending', 'Approved', 'Rejected', 'Needs Clarification'], default: 'Pending' },
+  cdcStatus: { type: String, enum: ['Pending', 'Recommended', 'Not Recommended', 'Need Clarification'], default: 'Pending' },
   principalStatus: { type: String, enum: ['Pending Review', 'Approved', 'Rejected'], default: 'Pending Review' },
 }, { timestamps: true });
 

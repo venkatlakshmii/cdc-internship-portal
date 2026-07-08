@@ -262,7 +262,7 @@ export default function InternshipCompletion() {
     const studentName = c.studentDetails?.name || '';
     const rollNo = c.studentDetails?.rollNumber || '';
     const q = search.toLowerCase().trim();
-    const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+    const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
     const cleanSearch = rollMatch ? rollMatch[1] : q;
     const matchSearch = studentName.toLowerCase().includes(cleanSearch) || 
                         rollNo.toLowerCase().includes(cleanSearch);
@@ -271,7 +271,23 @@ export default function InternshipCompletion() {
     const matchBranch = branchFilter === 'all' || c.studentDetails?.branch === branchFilter;
     const matchYear = yearFilter === 'all' || (c.studentDetails?.year && (c.studentDetails.year.includes(yearFilter + ' Year') || c.studentDetails.year === yearFilter));
 
-    return matchSearch && matchStatus && matchBranch && matchYear;
+    const matchDate = (() => {
+      if (!startDate && !endDate) return true;
+      const compDate = c.completionDate;
+      if (!compDate) return false;
+      
+      const dateObj = new Date(compDate);
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const appDateStr = `${year}-${month}-${day}`;
+      
+      if (startDate && appDateStr < startDate) return false;
+      if (endDate && appDateStr > endDate) return false;
+      return true;
+    })();
+
+    return matchSearch && matchStatus && matchBranch && matchYear && matchDate;
   });
 
   const getStatusBadge = (status: string, size = 10) => {

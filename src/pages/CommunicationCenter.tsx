@@ -508,7 +508,7 @@ export default function CommunicationCenter() {
     // 3. Dynamic search filter - matches any message in the thread
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      const rollMatch = q.match(/^([0-9]{2}e51a[0-9a-z]{4})@hitam\.org$/);
+      const rollMatch = q.match(/^([a-z0-9]{10})@hitam\.org$/);
       const rollNumberQuery = rollMatch ? rollMatch[1] : '';
 
       const matchesSearch = thread.messages.some(m => 

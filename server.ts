@@ -10,6 +10,10 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer as createViteServer } from 'vite';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import cluster from 'cluster';
+import os from 'os';
+import compression from 'compression';
+import crypto from 'crypto';
 import authRoutes from './src/routes/auth.ts';
 import internshipRoutes, {
   getForwardedApplications,
@@ -25,12 +29,64 @@ import fileRoutes from './src/routes/files.ts';
 import { User } from './src/models/User.ts';
 import { authenticate, authorize } from './src/middleware/auth.ts';
 
-const PORT = 3000;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 const DEFAULT_MONGODB_URI = 'mongodb://127.0.0.1:27017/hitam_cdc';
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || DEFAULT_MONGODB_URI;
 let memoryServer: MongoMemoryServer | null = null;
 
-async function startServer() {
+async function runMaster() {
+  let finalMongoUri = MONGO_URI;
+  console.log(`[Master] Attempting primary MongoDB connection to ${MONGO_URI}`);
+  try {
+    await mongoose.connect(MONGO_URI, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 3000,
+    });
+    console.log(`[Master] Primary MongoDB connection successful.`);
+    await seedUsers();
+    await cleanMockData();
+    await mongoose.disconnect();
+  } catch (error) {
+    console.error('[Master] Primary MongoDB connection failed:', error);
+    console.log('[Master] Attempting in-memory MongoDB fallback...');
+    try {
+      memoryServer = await MongoMemoryServer.create();
+      const baseUri = memoryServer.getUri();
+      finalMongoUri = baseUri.endsWith('/') ? `${baseUri}hitam_cdc` : `${baseUri}/hitam_cdc`;
+      console.log(`[Master] In-memory MongoDB started at ${finalMongoUri}`);
+      
+      await mongoose.connect(finalMongoUri, {
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 3000,
+        dbName: 'hitam_cdc',
+      });
+      console.log('[Master] Connected to in-memory MongoDB fallback.');
+      await seedUsers();
+      await cleanMockData();
+      await mongoose.disconnect();
+    } catch (memoryError) {
+      console.error('[Master] In-memory MongoDB fallback failed:', memoryError);
+      process.exit(1);
+    }
+  }
+
+  const numCPUs = Math.min(os.cpus().length, 4);
+  console.log(`[Master] Forking ${numCPUs} worker processes...`);
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork({
+      MONGO_URI: finalMongoUri
+    });
+  }
+
+  cluster.on('exit', (worker, code, signal) => {
+    console.log(`[Master] Worker ${worker.process.pid} died. Forking replacement...`);
+    cluster.fork({
+      MONGO_URI: finalMongoUri
+    });
+  });
+}
+
+async function runWorker() {
   const app = express();
 
   // Rate limiter for auth endpoints
@@ -48,17 +104,23 @@ async function startServer() {
   // Middleware
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors());
+  app.use(compression());
   app.use(express.json());
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
   // Connect to MongoDB
   try {
-    await connectToMongo();
-    await seedUsers();
-    await cleanMockData();
+    const workerMongoUri = process.env.MONGO_URI || DEFAULT_MONGODB_URI;
+    console.log(`[Worker ${process.pid}] Connecting to MongoDB at ${workerMongoUri}`);
+    await mongoose.connect(workerMongoUri, {
+      maxPoolSize: 50,
+      serverSelectionTimeoutMS: 5000,
+      dbName: 'hitam_cdc',
+    });
+    console.log(`[Worker ${process.pid}] Connected to MongoDB.`);
   } catch (error) {
-    console.error('MongoDB connection error:', error);
-    console.log('Running in fallback mode without MongoDB');
+    console.error(`[Worker ${process.pid}] MongoDB connection error:`, error);
+    console.log(`[Worker ${process.pid}] Running in fallback mode without MongoDB`);
   }
 
   // API Routes
@@ -176,40 +238,8 @@ async function startServer() {
   });
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`[Worker ${process.pid}] Server running on http://localhost:${PORT}`);
   });
-}
-
-async function connectToMongo() {
-  console.log(`Attempting primary MongoDB connection to ${MONGO_URI}`);
-  try {
-    await mongoose.connect(MONGO_URI, {
-      maxPoolSize: 50,
-      serverSelectionTimeoutMS: 5000,
-    });
-    console.log(`Connected to MongoDB at ${MONGO_URI}`);
-    return;
-  } catch (error) {
-    console.error('Primary MongoDB connection failed:', error);
-
-    // Fall back to in-memory MongoDB
-    console.log('Attempting in-memory MongoDB fallback...');
-    try {
-      memoryServer = await MongoMemoryServer.create();
-      const memoryUri = memoryServer.getUri();
-      console.log(`In-memory MongoDB started at ${memoryUri}`);
-
-      await mongoose.connect(memoryUri, {
-        maxPoolSize: 50,
-        serverSelectionTimeoutMS: 5000,
-        dbName: 'hitam_cdc',
-      });
-      console.log('Connected to in-memory MongoDB');
-    } catch (memoryError) {
-      console.error('In-memory MongoDB fallback failed:', memoryError);
-      throw memoryError;
-    }
-  }
 }
 
 async function seedUsers() {
@@ -217,16 +247,16 @@ async function seedUsers() {
     { name: 'inderjeet', email: '24e51a6665@hitam.org', password: 'password123', role: 'student' },
     { name: 'CDC Faculty', email: 'cdc@hitam.org', password: 'password123', role: 'cdc' },
     { name: 'Principal', email: 'principal@hitam.org', password: 'password123', role: 'principal' },
-    { name: 'Dean Careers', email: 'dean@hitam.org', password: 'password123', role: 'dean' },
   ];
 
   for (const userData of users) {
     const existing = await User.findOne({ email: userData.email });
     if (!existing) {
       const hashedPassword = await bcrypt.hash(userData.password, 12);
+      const passwordHashSha256 = crypto.createHash('sha256').update(userData.password).digest('hex');
       const atIndex = userData.email.indexOf('@');
       const rollNumber = atIndex !== -1 ? userData.email.substring(0, atIndex).toUpperCase() : '';
-      await new User({ ...userData, password: hashedPassword, rollNumber }).save();
+      await new User({ ...userData, password: hashedPassword, passwordHashSha256, rollNumber }).save();
       console.log(`Seeded user: ${userData.email}`);
     }
   }
@@ -331,4 +361,50 @@ async function cleanMockData() {
   }
 }
 
-startServer();
+if (process.env.NODE_ENV !== 'production') {
+  console.log('[Dev] Running in single-process mode');
+  (async () => {
+    let finalMongoUri = MONGO_URI;
+    console.log(`[Dev] Attempting MongoDB connection to ${MONGO_URI}`);
+    try {
+      await mongoose.connect(MONGO_URI, {
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 3000,
+      });
+      console.log(`[Dev] MongoDB connection successful.`);
+      await seedUsers();
+      await cleanMockData();
+      // Keep Mongoose connection open for the development server
+    } catch (error) {
+      console.error('[Dev] Primary MongoDB connection failed:', error);
+      console.log('[Dev] Attempting in-memory MongoDB fallback...');
+      try {
+        memoryServer = await MongoMemoryServer.create();
+        const baseUri = memoryServer.getUri();
+        finalMongoUri = baseUri.endsWith('/') ? `${baseUri}hitam_cdc` : `${baseUri}/hitam_cdc`;
+        console.log(`[Dev] In-memory MongoDB started at ${finalMongoUri}`);
+        
+        await mongoose.connect(finalMongoUri, {
+          maxPoolSize: 10,
+          serverSelectionTimeoutMS: 3000,
+          dbName: 'hitam_cdc',
+        });
+        console.log('[Dev] Connected to in-memory MongoDB fallback.');
+        await seedUsers();
+        await cleanMockData();
+        // Keep fallback Mongoose connection open for the development server
+      } catch (memoryError) {
+        console.error('[Dev] In-memory MongoDB fallback failed:', memoryError);
+        process.exit(1);
+      }
+    }
+    process.env.MONGO_URI = finalMongoUri;
+    runWorker();
+  })();
+} else {
+  if (cluster.isPrimary || cluster.isMaster) {
+    runMaster();
+  } else {
+    runWorker();
+  }
+}

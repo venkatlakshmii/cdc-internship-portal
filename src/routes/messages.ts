@@ -106,12 +106,22 @@ router.post('/send', authenticate, upload.single('attachment'), async (req: Auth
     }
 
     if (!isAnnouncement) {
-      const recipient = await User.findById(recipientId);
-      if (!recipient) {
-        return res.status(404).json({ message: 'Recipient user not found.' });
+      const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(recipientId);
+      if (!isValidObjectId) {
+        if (recipientId === 'system-alert') {
+          recipientName = 'System Control';
+          recipientRole = 'system';
+        } else {
+          return res.status(400).json({ message: 'Invalid recipient ID format.' });
+        }
+      } else {
+        const recipient = await User.findById(recipientId);
+        if (!recipient) {
+          return res.status(404).json({ message: 'Recipient user not found.' });
+        }
+        recipientName = recipient.name;
+        recipientRole = recipient.role;
       }
-      recipientName = recipient.name;
-      recipientRole = recipient.role;
     }
 
     const messageData: any = {

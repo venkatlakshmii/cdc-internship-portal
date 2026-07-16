@@ -8,6 +8,7 @@
     "server": "tsx server.ts",
     "client": "vite --port 5173",
     "build": "vite build",
+    "start": "node --import tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"

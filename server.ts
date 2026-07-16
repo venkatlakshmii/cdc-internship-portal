@@ -54,7 +54,7 @@ async function runMaster() {
       const baseUri = memoryServer.getUri();
       finalMongoUri = baseUri.endsWith('/') ? `${baseUri}hitam_cdc` : `${baseUri}/hitam_cdc`;
       console.log(`[Master] In-memory MongoDB started at ${finalMongoUri}`);
-      
+
       await mongoose.connect(finalMongoUri, {
         maxPoolSize: 10,
         serverSelectionTimeoutMS: 3000,
@@ -70,7 +70,7 @@ async function runMaster() {
     }
   }
 
-  const numCPUs = Math.min(os.cpus().length, 4);
+  const numCPUs = process.env.NODE_ENV === "production" ? 1 : Math.min(os.cpus().length, 4);
   console.log(`[Master] Forking ${numCPUs} worker processes...`);
   for (let i = 0; i < numCPUs; i++) {
     cluster.fork({
@@ -126,8 +126,8 @@ async function runWorker() {
   // API Routes
   app.get('/api/health', async (req, res) => {
     const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-    res.json({ 
-      status: 'ok', 
+    res.json({
+      status: 'ok',
       database: dbStatus,
       env: process.env.NODE_ENV
     });
@@ -281,14 +281,18 @@ async function cleanMockData() {
     // 1. Delete mock internships
     const internshipResult = await Internship.deleteMany({
       $or: [
-        { 'internshipDetails.companyName': { $in: [
-          'Approve-Approve Corp',
-          'Approve-Reject Corp',
-          'Reject-Approve Corp',
-          'Reject-Reject Corp',
-          'Clarify Corp',
-          'Clarify Corp (Resubmitted)'
-        ] } },
+        {
+          'internshipDetails.companyName': {
+            $in: [
+              'Approve-Approve Corp',
+              'Approve-Reject Corp',
+              'Reject-Approve Corp',
+              'Reject-Reject Corp',
+              'Clarify Corp',
+              'Clarify Corp (Resubmitted)'
+            ]
+          }
+        },
         { 'internshipDetails.companyName': { $in: mockPatterns } },
         { 'studentDetails.rollNumber': { $in: ['24E51A1234', '24e51a1234'] } },
         { 'studentDetails.name': 'Student User' },
@@ -354,7 +358,7 @@ async function cleanMockData() {
       // Find the best instance (lowercase email preferred)
       const lowercaseInstance = duplicateUsers.find(u => u.email === '24e51a6665@hitam.org');
       const keepUser = lowercaseInstance || duplicateUsers[0];
-      
+
       // Delete all instances except the one we keep
       await User.deleteMany({
         email: /24e51a6665@hitam\.org/i,
@@ -389,7 +393,7 @@ if (process.env.NODE_ENV !== 'production') {
         const baseUri = memoryServer.getUri();
         finalMongoUri = baseUri.endsWith('/') ? `${baseUri}hitam_cdc` : `${baseUri}/hitam_cdc`;
         console.log(`[Dev] In-memory MongoDB started at ${finalMongoUri}`);
-        
+
         await mongoose.connect(finalMongoUri, {
           maxPoolSize: 10,
           serverSelectionTimeoutMS: 3000,

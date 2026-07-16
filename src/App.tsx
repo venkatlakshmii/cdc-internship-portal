@@ -7,6 +7,7 @@ import Layout from './components/Layout.tsx';
 const StudentDashboard = lazy(() => import('./pages/StudentDashboard.tsx'));
 const CDCDashboard = lazy(() => import('./pages/CDCDashboard.tsx'));
 const PrincipalDashboard = lazy(() => import('./pages/PrincipalDashboard.tsx'));
+const HODDashboard = lazy(() => import('./pages/HODDashboard.tsx'));
 const InternshipForm = lazy(() => import('./pages/InternshipForm.tsx'));
 const StudentRegistration = lazy(() => import('./pages/StudentRegistration.tsx'));
 const MonthlyReports = lazy(() => import('./pages/MonthlyReports.tsx'));
@@ -28,7 +29,7 @@ export default function App() {
 
         <Route element={<ProtectedRoute roles={['hod']} />}>
           <Route element={<Layout />}>
-            <Route path="/hod" element={<CommunicationCenter />} />
+            <Route path="/hod" element={<HODDashboard />} />
           </Route>
         </Route>
 

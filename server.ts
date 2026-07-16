@@ -247,6 +247,12 @@ async function seedUsers() {
     { name: 'inderjeet', email: '24e51a6665@hitam.org', password: 'password123', role: 'student' },
     { name: 'CDC Faculty', email: 'cdc@hitam.org', password: 'password123', role: 'cdc' },
     { name: 'Principal', email: 'principal@hitam.org', password: 'password123', role: 'principal' },
+    { name: 'CSE HOD', email: 'csehod@hitam.org', password: 'password123', role: 'hod', branch: 'CSE' },
+    { name: 'CSM HOD', email: 'csmhod@hitam.org', password: 'password123', role: 'hod', branch: 'CSM' },
+    { name: 'CSD HOD', email: 'csdhod@hitam.org', password: 'password123', role: 'hod', branch: 'CSD' },
+    { name: 'EEE HOD', email: 'eeehod@hitam.org', password: 'password123', role: 'hod', branch: 'EEE' },
+    { name: 'ECE HOD', email: 'ecehod@hitam.org', password: 'password123', role: 'hod', branch: 'ECE' },
+    { name: 'MECH HOD', email: 'mechhod@hitam.org', password: 'password123', role: 'hod', branch: 'MECH' },
   ];
 
   for (const userData of users) {

@@ -557,6 +557,106 @@ export default function CDCDashboard() {
                 </div>
               )}
 
+              {/* HOD Review Details */}
+              {selectedApp.hodStatus && selectedApp.hodStatus !== 'Pending' && (
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">HOD Review Assessment</h4>
+                  <p className="text-slate-900 text-sm font-bold">
+                    HOD Recommendation:{" "}
+                    <span className={`font-bold uppercase ${
+                      selectedApp.hodStatus === 'Recommended' ? 'text-emerald-600' :
+                      selectedApp.hodStatus === 'Not Recommended' ? 'text-red-600' : 'text-amber-600'
+                    }`}>
+                      {selectedApp.hodStatus === 'Recommended' ? 'Recommended ✓' :
+                        selectedApp.hodStatus === 'Not Recommended' ? 'Not Recommended ✗' :
+                        selectedApp.hodStatus === 'Need Clarification' ? 'Need Clarification' :
+                          `${selectedApp.hodStatus}`}
+                    </span>
+                  </p>
+                  <p className="text-slate-500 text-xs">
+                    HOD Reviewed By: {selectedApp.hodReviewedBy || 'HOD'}
+                    {selectedApp.hodReviewedAt && ` on ${new Date(selectedApp.hodReviewedAt).toLocaleDateString()}`}
+                  </p>
+                  {selectedApp.hodComments && (
+                    <p className="text-slate-600 text-xs mt-2 bg-white border border-slate-200 p-2.5 rounded-xl italic">
+                      HOD Comments: "{selectedApp.hodComments}"
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                <h4 className="text-sm font-bold text-slate-900">Assign Bands & Verify Attendance</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">SPF Band <span className="text-red-500">*</span></label>
+                    <select
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold text-sm"
+                      value={bands.spfBand}
+                      onChange={(e) => {
+                        const newSpf = e.target.value;
+                        setBands(prev => {
+                          const updated = { ...prev, spfBand: newSpf };
+                          const isSpfCD = updated.spfBand === 'C' || updated.spfBand === 'D';
+                          const isCdcCD = updated.cdcBand === 'C' || updated.cdcBand === 'D';
+                          if (isSpfCD || isCdcCD) {
+                            setCdcRecommendation('Not Recommended');
+                            setCdcRemarks('Meet HOD for permission.');
+                          }
+                          return updated;
+                        });
+                      }}
+                    >
+                      <option value="">Select SPF Band</option>
+                      <option value="A">Band A</option>
+                      <option value="B">Band B</option>
+                      <option value="C">Band C</option>
+                      <option value="D">Band D</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">CDC Band <span className="text-red-500">*</span></label>
+                    <select
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold text-sm"
+                      value={bands.cdcBand}
+                      onChange={(e) => {
+                        const newCdc = e.target.value;
+                        setBands(prev => {
+                          const updated = { ...prev, cdcBand: newCdc };
+                          const isSpfCD = updated.spfBand === 'C' || updated.spfBand === 'D';
+                          const isCdcCD = updated.cdcBand === 'C' || updated.cdcBand === 'D';
+                          if (isSpfCD || isCdcCD) {
+                            setCdcRecommendation('Not Recommended');
+                            setCdcRemarks('Meet HOD for permission.');
+                          }
+                          return updated;
+                        });
+                      }}
+                    >
+                      <option value="">Select CDC Band</option>
+                      <option value="A">Band A</option>
+                      <option value="B">Band B</option>
+                      <option value="C">Band C</option>
+                      <option value="D">Band D</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Verified Attendance (%) <span className="text-red-500">*</span></label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold text-sm focus:ring-2 focus:ring-[#78be21]/20 focus:border-[#78be21]"
+                      placeholder="e.g. 78.50"
+                      value={verifiedAttendance}
+                      onChange={(e) => setVerifiedAttendance(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Recommendation and Remarks */}
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
                 <h4 className="text-sm font-bold text-slate-900">CDC Assessment</h4>
@@ -581,54 +681,6 @@ export default function CDCDashboard() {
                       placeholder="Add assessment remarks..."
                       value={cdcRemarks}
                       onChange={(e) => setCdcRemarks(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
-                <h4 className="text-sm font-bold text-slate-900">Assign Bands & Verify Attendance</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">SPF Band <span className="text-red-500">*</span></label>
-                    <select
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold text-sm"
-                      value={bands.spfBand}
-                      onChange={(e) => setBands({ ...bands, spfBand: e.target.value })}
-                    >
-                      <option value="">Select SPF Band</option>
-                      <option value="A">Band A</option>
-                      <option value="B">Band B</option>
-                      <option value="C">Band C</option>
-                      <option value="D">Band D</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">CDC Band <span className="text-red-500">*</span></label>
-                    <select
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold text-sm"
-                      value={bands.cdcBand}
-                      onChange={(e) => setBands({ ...bands, cdcBand: e.target.value })}
-                    >
-                      <option value="">Select CDC Band</option>
-                      <option value="A">Band A</option>
-                      <option value="B">Band B</option>
-                      <option value="C">Band C</option>
-                      <option value="D">Band D</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Verified Attendance (%) <span className="text-red-500">*</span></label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg outline-none text-slate-700 font-semibold text-sm focus:ring-2 focus:ring-[#78be21]/20 focus:border-[#78be21]"
-                      placeholder="e.g. 78.50"
-                      value={verifiedAttendance}
-                      onChange={(e) => setVerifiedAttendance(e.target.value)}
-                      required
                     />
                   </div>
                 </div>

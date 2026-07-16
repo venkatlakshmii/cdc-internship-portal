@@ -135,13 +135,13 @@ router.post('/login', async (req, res) => {
           const passwordHashSha256 = crypto.createHash('sha256').update(password).digest('hex');
           memUser.passwordHashSha256 = passwordHashSha256;
           console.log(`[LOGIN SUCCESS] Memory user found: ${email}`);
-          const accessToken = jwt.sign({ id: memUser._id, role: memUser.role, email: memUser.email }, JWT_SECRET, { expiresIn: '1d' });
-          const refreshToken = jwt.sign({ id: memUser._id, role: memUser.role, email: memUser.email }, JWT_SECRET, { expiresIn: '7d' });
+          const accessToken = jwt.sign({ id: memUser._id, role: memUser.role, email: memUser.email, branch: memUser.branch }, JWT_SECRET, { expiresIn: '1d' });
+          const refreshToken = jwt.sign({ id: memUser._id, role: memUser.role, email: memUser.email, branch: memUser.branch }, JWT_SECRET, { expiresIn: '7d' });
           return res.json({ 
             token: accessToken, 
             accessToken, 
             refreshToken, 
-            user: { id: memUser._id, name: memUser.name, email: memUser.email, role: memUser.role, profileRegistered: memUser.profileRegistered } 
+            user: { id: memUser._id, name: memUser.name, email: memUser.email, role: memUser.role, profileRegistered: memUser.profileRegistered, branch: memUser.branch } 
           });
         }
       }
@@ -150,18 +150,24 @@ router.post('/login', async (req, res) => {
         { name: 'Student User', email: '24E51A6665@hitam.org', password: 'password123', role: 'student' },
         { name: 'CDC Faculty', email: 'cdc@hitam.org', password: 'password123', role: 'cdc' },
         { name: 'Principal', email: 'principal@hitam.org', password: 'password123', role: 'principal' },
+        { name: 'CSE HOD', email: 'csehod@hitam.org', password: 'password123', role: 'hod', branch: 'CSE' },
+        { name: 'CSM HOD', email: 'csmhod@hitam.org', password: 'password123', role: 'hod', branch: 'CSM' },
+        { name: 'CSD HOD', email: 'csdhod@hitam.org', password: 'password123', role: 'hod', branch: 'CSD' },
+        { name: 'EEE HOD', email: 'eeehod@hitam.org', password: 'password123', role: 'hod', branch: 'EEE' },
+        { name: 'ECE HOD', email: 'ecehod@hitam.org', password: 'password123', role: 'hod', branch: 'ECE' },
+        { name: 'MECH HOD', email: 'mechhod@hitam.org', password: 'password123', role: 'hod', branch: 'MECH' },
       ];
       
       const fallbackUser = fallbackUsers.find(u => u.email.toLowerCase() === email?.trim().toLowerCase() && u.password === password);
       if (fallbackUser) {
         console.log(`[LOGIN SUCCESS] Fallback user found: ${email}`);
-        const accessToken = jwt.sign({ id: 'fallback-id', role: fallbackUser.role, email: fallbackUser.email }, JWT_SECRET, { expiresIn: '1d' });
-        const refreshToken = jwt.sign({ id: 'fallback-id', role: fallbackUser.role, email: fallbackUser.email }, JWT_SECRET, { expiresIn: '7d' });
+        const accessToken = jwt.sign({ id: 'fallback-id', role: fallbackUser.role, email: fallbackUser.email, branch: (fallbackUser as any).branch }, JWT_SECRET, { expiresIn: '1d' });
+        const refreshToken = jwt.sign({ id: 'fallback-id', role: fallbackUser.role, email: fallbackUser.email, branch: (fallbackUser as any).branch }, JWT_SECRET, { expiresIn: '7d' });
         return res.json({ 
           token: accessToken, 
           accessToken, 
           refreshToken, 
-          user: { id: 'fallback-id', name: fallbackUser.name, email: fallbackUser.email, role: fallbackUser.role, profileRegistered: false } 
+          user: { id: 'fallback-id', name: fallbackUser.name, email: fallbackUser.email, role: fallbackUser.role, profileRegistered: false, branch: (fallbackUser as any).branch } 
         });
       } else {
         console.log(`[LOGIN FAILED] Fallback user match not found for email: ${email}`);
@@ -224,13 +230,13 @@ router.post('/login', async (req, res) => {
     }
 
     console.log(`[LOGIN SUCCESS] User authenticated: ${email}`);
-    const accessToken = jwt.sign({ id: user._id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '1d' });
-    const refreshToken = jwt.sign({ id: user._id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    const accessToken = jwt.sign({ id: user._id, role: user.role, email: user.email, branch: user.branch }, JWT_SECRET, { expiresIn: '1d' });
+    const refreshToken = jwt.sign({ id: user._id, role: user.role, email: user.email, branch: user.branch }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ 
       token: accessToken, 
       accessToken, 
       refreshToken, 
-      user: { id: user._id, name: user.name, email: user.email, role: user.role, profileRegistered: user.profileRegistered } 
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, profileRegistered: user.profileRegistered, branch: user.branch } 
     });
   } catch (error) {
     console.error('Login error:', error);

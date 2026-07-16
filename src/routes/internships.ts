@@ -175,6 +175,16 @@ function formatInternshipForFrontend(app: any) {
     });
   }
 
+  if (appObj.hodStatus && appObj.hodStatus !== 'Pending') {
+    studentEntries.push({
+      status: `HOD Reviewed: ${appObj.hodStatus}`,
+      updatedBy: appObj.hodReviewedBy || 'HOD',
+      role: 'hod',
+      remarks: appObj.hodComments ? `Comments: ${appObj.hodComments}` : `HOD Decision: ${appObj.hodStatus}`,
+      timestamp: appObj.hodReviewedAt || appObj.updatedAt
+    });
+  }
+
   if (principalStatus !== 'PENDING') {
     studentEntries.push({
       status: 'Principal Final Decision',
@@ -475,6 +485,23 @@ router.get('/detail/:id', authenticate, async (req: AuthRequest, res, next) => {
     if (req.user?.role === 'student' && ownerId !== req.user.id) {
       return res.status(403).json({ message: 'Forbidden' });
     }
+
+    if (req.user?.role === 'hod') {
+      const hod = await User.findById(req.user.id);
+      if (!hod) return res.status(404).json({ message: 'HOD user not found' });
+      
+      const studentBranch = (internship.studentDetails?.branch || '').toUpperCase().trim();
+      const hodBranch = (hod.branch || '').toUpperCase().trim();
+      
+      const branchMatches = hodBranch === 'MECH'
+        ? (studentBranch === 'MECH' || studentBranch === 'ME')
+        : (studentBranch === hodBranch);
+        
+      if (!branchMatches) {
+        return res.status(403).json({ message: 'Forbidden: You can only view applications from your department.' });
+      }
+    }
+
     res.json(formatInternshipForFrontend(internship));
   } catch (error) {
     next(error);
@@ -888,7 +915,18 @@ export const getForwardedApplications = async (req: AuthRequest, res: express.Re
     const statusQuery = {
       $and: [
         { 'cdcRecommendation.status': { $ne: 'PENDING' } },
-        { cdcRecommendation: { $ne: 'PENDING' } }
+        { cdcRecommendation: { $ne: 'PENDING' } },
+        {
+          $or: [
+            {
+              $and: [
+                { spfBand: { $nin: ['C', 'D'] } },
+                { cdcBand: { $nin: ['C', 'D'] } }
+              ]
+            },
+            { hodStatus: { $ne: 'Pending' } }
+          ]
+        }
       ]
     };
 
@@ -1062,5 +1100,118 @@ export const handlePrincipalDecision = async (req: AuthRequest, res: express.Res
   }
 };
 router.patch('/principal-decision/:id', authenticate, authorize(['principal']), handlePrincipalDecision);
+
+// HOD: Get Applications for own Department
+router.get('/hod/applications', authenticate, authorize(['hod']), async (req: AuthRequest, res, next) => {
+  try {
+    const hod = await User.findById(req.user?.id);
+    if (!hod) return res.status(404).json({ message: 'HOD user not found' });
+
+    let hodBranch = (hod.branch || '').toUpperCase().trim();
+    if (!hodBranch && hod.email) {
+      const prefix = hod.email.split('@')[0].toLowerCase();
+      if (prefix.endsWith('hod')) {
+        hodBranch = prefix.replace('hod', '').toUpperCase().trim();
+      }
+    }
+
+    if (!hodBranch) {
+      return res.status(400).json({ message: 'HOD branch configuration not found.' });
+    }
+
+    let branchFilter: any;
+    if (hodBranch === 'MECH' || hodBranch === 'ME') {
+      branchFilter = { $in: [/^MECH$/i, /^ME$/i] };
+    } else {
+      branchFilter = new RegExp(`^${hodBranch}$`, 'i');
+    }
+
+    const query = {
+      'studentDetails.branch': branchFilter,
+      'cdcRecommendation.status': { $ne: 'PENDING' }, // Only applications already assessed by CDC Faculty
+      $or: [
+        { spfBand: { $in: ['C', 'D'] } },
+        { cdcBand: { $in: ['C', 'D'] } }
+      ]
+    };
+
+    const applications = await Internship.find(query)
+      .populate('studentId', 'name email')
+      .sort({ createdAt: -1 });
+
+    const populatedApps = applications.map(app => formatInternshipForFrontend(app));
+    res.json(populatedApps);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// HOD: Submit Recommendation / Opinion
+router.post('/hod/review/:id', authenticate, authorize(['hod']), async (req: AuthRequest, res, next) => {
+  try {
+    const { action, comment } = req.body;
+
+    if (!action || !['Recommended', 'Not Recommended', 'Need Clarification'].includes(action)) {
+      return res.status(400).json({ message: 'Invalid HOD action. Must be Recommended, Not Recommended, or Need Clarification.' });
+    }
+
+    if (!comment || typeof comment !== 'string' || comment.trim() === '') {
+      return res.status(400).json({ message: 'Comments are mandatory for HOD review.' });
+    }
+
+    const internship = await Internship.findById(req.params.id);
+    if (!internship) return res.status(404).json({ message: 'Internship not found' });
+
+    const hod = await User.findById(req.user?.id);
+    if (!hod) return res.status(404).json({ message: 'HOD user not found' });
+
+    let hodBranch = (hod.branch || '').toUpperCase().trim();
+    if (!hodBranch && hod.email) {
+      const prefix = hod.email.split('@')[0].toLowerCase();
+      if (prefix.endsWith('hod')) {
+        hodBranch = prefix.replace('hod', '').toUpperCase().trim();
+      }
+    }
+
+    if (!hodBranch) {
+      return res.status(403).json({ message: 'Forbidden: HOD branch not configured.' });
+    }
+
+    const studentBranch = (internship.studentDetails?.branch || '').toUpperCase().trim();
+
+    const branchMatches = (hodBranch === 'MECH' || hodBranch === 'ME')
+      ? (studentBranch === 'MECH' || studentBranch === 'ME')
+      : (studentBranch === hodBranch);
+
+    if (!branchMatches) {
+      return res.status(403).json({ message: 'Forbidden: You can only review applications from your department.' });
+    }
+
+    // Save HOD Review details
+    internship.hodStatus = action;
+    internship.hodComments = comment.trim();
+    internship.hodReviewedBy = hod.name;
+    internship.hodReviewedAt = new Date();
+
+    // Append to timeline
+    internship.timeline.push({
+      action: `HOD Decision: ${action}`,
+      by: 'HOD',
+      timestamp: new Date(),
+      status: `HOD Reviewed: ${action}`,
+      updatedBy: hod.name,
+      role: 'hod',
+      remarks: comment.trim()
+    } as any);
+
+    internship.markModified('timeline');
+    await internship.save();
+
+    console.log(`[HOD REVIEW SUCCESS] Application ${internship._id} reviewed by ${hod.name} with decision ${action}`);
+    res.json({ message: 'HOD review submitted successfully', internship: formatInternshipForFrontend(internship) });
+  } catch (error) {
+    next(error);
+  }
+});
 
 export default router;

@@ -102,6 +102,10 @@ const InternshipSchema = new mongoose.Schema({
   studentEmail: { type: String, required: true },
   cdcStatus: { type: String, enum: ['Pending', 'Recommended', 'Not Recommended', 'Need Clarification'], default: 'Pending' },
   principalStatus: { type: String, enum: ['Pending Review', 'Approved', 'Rejected'], default: 'Pending Review' },
+  hodStatus: { type: String, enum: ['Pending', 'Recommended', 'Not Recommended', 'Need Clarification'], default: 'Pending' },
+  hodComments: { type: String, default: '' },
+  hodReviewedBy: { type: String },
+  hodReviewedAt: { type: Date },
 }, { timestamps: true });
 
 InternshipSchema.index({ studentId: 1 });
@@ -109,6 +113,7 @@ InternshipSchema.index({ rollNumber: 1 });
 InternshipSchema.index({ studentEmail: 1 });
 InternshipSchema.index({ cdcStatus: 1 });
 InternshipSchema.index({ principalStatus: 1 });
+InternshipSchema.index({ hodStatus: 1 });
 InternshipSchema.index({ eligibilityStatus: 1 });
 InternshipSchema.index({ finalStatus: 1 });
 InternshipSchema.index({ 'studentDetails.branch': 1 });

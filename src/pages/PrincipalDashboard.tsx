@@ -392,6 +392,17 @@ export default function PrincipalDashboard() {
                       </span>
                     );
                   })()}
+                  {app.hodStatus && app.hodStatus !== 'Pending' && (() => {
+                    const colorClass =
+                      app.hodStatus === 'Recommended' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                      app.hodStatus === 'Not Recommended' ? 'bg-red-50 text-red-600 border-red-100' :
+                      'bg-amber-50 text-amber-600 border-amber-100';
+                    return (
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wider ${colorClass}`}>
+                        HOD: {app.hodStatus}
+                      </span>
+                    );
+                  })()}
                   {(() => {
                     const status = app.principalDecision || 'Pending';
                     const colorClass =
@@ -560,6 +571,34 @@ export default function PrincipalDashboard() {
                         <span className="text-slate-800 font-semibold text-xs leading-snug">{selectedApp.criticalSubject}</span>
                         <p className="text-slate-500 text-[10px] mt-0.5">Student plans to attend this subject during internship</p>
                       </div>
+                    </div>
+                  )}
+
+                  {/* HOD Review Details */}
+                  {selectedApp.hodStatus && selectedApp.hodStatus !== 'Pending' && (
+                    <div className="mt-4 pt-4 border-t border-slate-100">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">HOD Review Assessment</h4>
+                      <p className="text-slate-900 text-sm font-bold">
+                        HOD Recommendation:{" "}
+                        <span className={`font-bold uppercase ${
+                          selectedApp.hodStatus === 'Recommended' ? 'text-emerald-600' :
+                          selectedApp.hodStatus === 'Not Recommended' ? 'text-red-600' : 'text-amber-600'
+                        }`}>
+                          {selectedApp.hodStatus === 'Recommended' ? 'Recommended ✓' :
+                            selectedApp.hodStatus === 'Not Recommended' ? 'Not Recommended ✗' :
+                            selectedApp.hodStatus === 'Need Clarification' ? 'Need Clarification' :
+                              `${selectedApp.hodStatus}`}
+                        </span>
+                      </p>
+                      <p className="text-slate-500 text-xs mt-1">
+                        HOD Reviewed By: {selectedApp.hodReviewedBy || 'HOD'}
+                        {selectedApp.hodReviewedAt && ` on ${new Date(selectedApp.hodReviewedAt).toLocaleDateString()}`}
+                      </p>
+                      {selectedApp.hodComments && (
+                        <p className="text-slate-600 text-xs mt-2 bg-slate-50 border border-slate-100 p-2.5 rounded-xl italic">
+                          HOD Comments: "{selectedApp.hodComments}"
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

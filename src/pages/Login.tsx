@@ -4,7 +4,7 @@ import axios from 'axios';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lock, Mail, AlertCircle, User as UserIcon, ChevronDown, GraduationCap, Shield, Building2 } from 'lucide-react';
 
-type Role = 'student' | 'cdc' | 'principal';
+type Role = 'student' | 'cdc' | 'principal' | 'hod';
 
 const ROLE_OPTIONS: { value: Role; label: string; icon: React.ReactNode; emailPrefix: string; readOnly: boolean; placeholder: string }[] = [
   {
@@ -30,6 +30,14 @@ const ROLE_OPTIONS: { value: Role; label: string; icon: React.ReactNode; emailPr
     emailPrefix: 'principal',
     readOnly: true,
     placeholder: 'principal',
+  },
+  {
+    value: 'hod',
+    label: 'HOD',
+    icon: <Shield size={16} />,
+    emailPrefix: '',
+    readOnly: false,
+    placeholder: 'e.g. csehod',
   },
 ];
 

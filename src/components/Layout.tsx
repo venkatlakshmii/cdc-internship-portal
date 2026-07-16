@@ -68,24 +68,40 @@ export default function Layout() {
         <aside className="w-64 bg-white border-r border-slate-200 p-4 hidden md:block">
           <div className="space-y-1">
             {/* Common Menu Option: Messages & Queries */}
-            <Link
-              to="/messages"
-              className={`flex items-center justify-between px-3 py-2 rounded-lg transition-all font-medium text-sm ${
-                location.pathname === '/messages' || location.pathname === '/hod'
-                  ? 'bg-slate-50 text-[#78be21] font-bold'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-[#78be21]'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <MessageSquare size={18} />
-                <span>Messages & Queries</span>
-              </div>
-              {unreadCount > 0 && (
-                <span className="bg-[#78be21] text-white text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
-                  {unreadCount}
-                </span>
-              )}
-            </Link>
+            {user?.role !== 'hod' && (
+              <Link
+                to="/messages"
+                className={`flex items-center justify-between px-3 py-2 rounded-lg transition-all font-medium text-sm ${
+                  location.pathname === '/messages'
+                    ? 'bg-slate-50 text-[#78be21] font-bold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-[#78be21]'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <MessageSquare size={18} />
+                  <span>Messages & Queries</span>
+                </div>
+                {unreadCount > 0 && (
+                  <span className="bg-[#78be21] text-white text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
+                    {unreadCount}
+                  </span>
+                )}
+              </Link>
+            )}
+
+            {user?.role === 'hod' && (
+              <Link
+                to="/hod"
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all font-medium text-sm ${
+                  location.pathname === '/hod'
+                    ? 'bg-slate-50 text-[#78be21] font-bold'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-[#78be21]'
+                }`}
+              >
+                <Users size={18} />
+                <span>HOD Dashboard</span>
+              </Link>
+            )}
 
             <div className="h-px bg-slate-100 my-3" />
 
